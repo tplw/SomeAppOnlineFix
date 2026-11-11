@@ -30,6 +30,20 @@ bool of_argument(const char *command, const char *argument) {
     return false;
 }
 
+// A compat-tool launch must keep the real AppID through Steam's launch pipeline;
+// only the Steam pipe is rewritten to 480. Native launches keep the legacy
+// SpawnProcess rewrite unless the game explicitly asks for late routing.
+bool of_wine_command(const char *command) {
+    if (!command) return false;
+    static const char *const markers[] = {
+        "/CrossOver/", "CrossOver.app/", "/notproton/", "NotProton.app/",
+        "wine64", "wine-preloader", "wineserver", ".exe",
+    };
+    for (size_t i = 0; i < sizeof(markers) / sizeof(markers[0]); ++i)
+        if (strstr(command, markers[i])) return true;
+    return false;
+}
+
 OFSession of_session(void) {
     pthread_mutex_lock(&lock);
     OFSession result = current;
@@ -37,26 +51,49 @@ OFSession of_session(void) {
     return result;
 }
 
-void of_start(const char *command, uint64_t *game) {
-    OFSession next = {.patches = OF_DEFAULT_PATCHES};
-    if (game && *game > 0 && *game <= 0xffffff && *game != 480) {
-        bool keep = false;
-        bool configured = of_config_game((uint32_t)*game, &keep, &next.patches);
-        if (configured || of_argument(command, "-onlinefix")) {
-            next.game = (uint32_t)*game;
-            next.keep_id = keep || of_argument(command, "-realappid");
-            *game = 480;
-        }
-    }
+static void publish(OFSession next) {
     pthread_mutex_lock(&lock);
     next.generation = current.generation + 1;
     current = next;
     pthread_mutex_unlock(&lock);
+}
+
+void of_start(const char *command, uint64_t *game) {
+    OFSession next = {.patches = OF_DEFAULT_PATCHES};
+    if (game && *game > 0 && *game <= 0xffffff && *game != 480) {
+        bool keep = false;
+        OFRoute route = OF_ROUTE_AUTO;
+        bool configured = of_config_game((uint32_t)*game, &keep, &route, &next.patches);
+        if (configured || of_argument(command, "-onlinefix")) {
+            next.game = (uint32_t)*game;
+            next.keep_id = keep || of_argument(command, "-realappid");
+            next.late = route == OF_ROUTE_LATE || (route == OF_ROUTE_AUTO && of_wine_command(command));
+            if (!next.late) *game = 480;
+            of_log("launch game=%u mode=%s keep-id=%d command=%.180s", next.game,
+                   next.late ? "late" : "early", next.keep_id, command ? command : "");
+        }
+    }
+    publish(next);
     if (next.game) {
-        of_log("launch game=%u session=480 keep-id=%d", next.game, next.keep_id);
+        of_log("session active game=%u pipe=480 keep-id=%d", next.game, next.keep_id);
         of_log("patches game=%u: startup-id=%d overlay-id=%d input-id=%d stats-id=%d", next.game,
                next.patches.startup_id, next.patches.overlay_id, next.patches.input_id, next.patches.stats_id);
     }
+}
+
+// A configured game can connect without a SpawnProcess session: launched from
+// Finder, a third-party launcher, or a wrapper. Route it when its pipe appears.
+bool of_route_pipe(uint32_t game) {
+    if (!game || game == 480) return false;
+    if (of_session().game) return false;
+    bool keep = false;
+    OFRoute route = OF_ROUTE_AUTO;
+    OFPatches patches = OF_DEFAULT_PATCHES;
+    if (!of_config_game(game, &keep, &route, &patches)) return false;
+    OFSession next = {.game = game, .keep_id = keep, .late = true, .patches = patches};
+    publish(next);
+    of_log("pipe launch game=%u mode=late keep-id=%d (no SpawnProcess session)", game, keep);
+    return true;
 }
 
 void of_networking(void) {

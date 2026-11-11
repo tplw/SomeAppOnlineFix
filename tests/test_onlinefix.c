@@ -115,7 +115,8 @@ int main(void) {
         OFPatches p = of_session().patches;
         assert(!p.startup_id && !p.overlay_id && !p.input_id && !p.stats_id);
         bool keep = false;
-        assert(!of_config_game(739630, &keep, &p)); // A Manager file fix is not Steam routing.
+        OFRoute route = OF_ROUTE_AUTO;
+        assert(!of_config_game(739630, &keep, &route, &p)); // A Manager file fix is not Steam routing.
     }
     char config[] = "/tmp/onlinefix-config-XXXXXX";
     int descriptor = mkstemp(config);
@@ -159,6 +160,24 @@ int main(void) {
     write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"patches\":{\"terrariaServerEnvironment\":true}}]}");
     selected = 105600; of_start("game", &selected);
     assert(selected == 480 && of_session().patches.terraria_server);
+    write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":\"late\"}]}");
+    selected = 105600; of_start("Terraria", &selected);
+    assert(selected == 105600 && of_session().game == 105600 && of_session().late);
+    write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":\"early\"}]}");
+    selected = 105600; of_start("/CrossOver/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine game.exe", &selected);
+    assert(selected == 480 && of_session().game == 105600 && !of_session().late);
+    write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false}]}");
+    selected = 105600; of_start("/Applications/NotProton.app/Contents/Resources/wine64 game.exe", &selected);
+    assert(selected == 105600 && of_session().late);
+    selected = 105600; of_start("Terraria.app/Contents/MacOS/Terraria", &selected);
+    assert(selected == 480 && !of_session().late);
+    assert(of_wine_command("wine-preloader game.exe") && of_wine_command("wineserver"));
+    assert(!of_wine_command("Terraria.app/Contents/MacOS/Terraria") && !of_wine_command(NULL));
+    selected = 413150; of_start("game", &selected);
+    assert(!of_session().game);
+    assert(of_route_pipe(105600));
+    assert(of_session().game == 105600 && of_session().late && !of_session().keep_id);
+    assert(!of_route_pipe(105600) && !of_route_pipe(480) && !of_route_pipe(739630) && !of_route_pipe(0));
     write_config(config, "{\"games\":[]}");
     selected = 105600; of_start("game", &selected);
     assert(selected == 105600 && !of_session().game);
@@ -169,6 +188,9 @@ int main(void) {
         "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"patches\":{\"statsAppID\":\"no\"}}]}",
         "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"patches\":{\"statsAppID\":null}}]}",
         "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"patches\":{\"unknownPatch\":true}}]}",
+        "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":\"nope\"}]}",
+        "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":true}]}",
+        "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":null}]}",
         "{\"games\":[{\"id\":413150,\"keepRealAppID\":false,\"patches\":{\"terrariaServerEnvironment\":true}}]}",
         "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"patches\":{\"statsAppID\":false,\"statsAppID\":true}}]}"};
     for (size_t i = 0; i < sizeof(invalid)/sizeof(invalid[0]); ++i) {

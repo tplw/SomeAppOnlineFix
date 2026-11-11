@@ -15,10 +15,15 @@ static void launch_hook(void *pc, DobbyRegisterContext *registers) {
 }
 
 static uint32_t session_hook(void *engine, uint32_t game, uint8_t update) {
-    OFSession s = of_session();
-    if (of_ready && s.game && game == s.game) {
-        of_log("pipe AppID: %u -> 480", game);
-        game = 480;
+    if (of_ready) {
+        OFSession s = of_session();
+        if (s.game && game == s.game) {
+            of_log("pipe AppID: %u -> 480 (mode=%s)", game, s.late ? "late" : "early");
+            game = 480;
+        } else if (!s.game && of_route_pipe(game)) {
+            of_log("pipe AppID: %u -> 480 (pipe session)", game);
+            game = 480;
+        }
     }
     return session_original(engine, game, update);
 }
