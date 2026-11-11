@@ -27,6 +27,11 @@ make -j4
 open out/OnlineFixManager.app
 ```
 
+Supported Steam client builds are `1791918634` and `1792618285`. Steam build
+`1794424036` changed the hook targets structurally; OnlineFix blocks installation
+until a profile is available. See [STEAM_BUILDS.md](docs/steam-build-recovery.md)
+for the current state and recovery steps.
+
 ## Online fix routing
 
 Each game can choose how the real AppID is routed to the 480 matchmaking session:

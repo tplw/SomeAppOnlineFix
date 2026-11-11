@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.1.0
 
 - Late Steam-pipe routing as an opt-in per-game mode and as the fallback for games launched outside Steam, including NotProton and third-party launchers.
 - Automatic routing keeps the proven early `SpawnProcess` rewrite for Steam-launched games.
