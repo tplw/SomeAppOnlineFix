@@ -122,26 +122,32 @@ struct SteamInstaller: Sendable {
         resources.appendingPathComponent("\(build).json")
     }
 
-    // Carry the newest bundled profile forward when Steam updated to a build we
-    // have not shipped yet. Fails closed: a bad derivation installs nothing.
+    // Carry a bundled profile forward when Steam updated to a build we have not
+    // shipped yet. Older references are tried first; a reference that no longer
+    // matches is skipped in favour of the next one. Fails closed: a bad
+    // derivation installs nothing.
     private func deriveProfile(build: UInt32, steamRoot: URL, into directory: URL) throws {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: directory.appendingPathComponent("\(build).json").path) else { return }
-        let candidates = (try? fm.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil))?
+        let all = (try? fm.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil))?
             .filter { $0.pathExtension == "json" && UInt32($0.deletingPathExtension().lastPathComponent) != nil }
-            .sorted { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) > (UInt32($1.deletingPathExtension().lastPathComponent) ?? 0) }
-        // Prefer the newest profile older than the target build. A downgrade must
-        // not be carried from a profile that postdates the client.
-        let older = candidates?.filter { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) < build }
-        guard let reference = older?.first ?? candidates?.first else {
-            throw ManagerError(message: "Steam build \(build) is not supported and no earlier profile can be carried forward. Update OnlineFix.")
+            .sorted { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) > (UInt32($1.deletingPathExtension().lastPathComponent) ?? 0) } ?? []
+        let older = all.filter { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) < build }
+        let newer = all.filter { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) >= build }
+        guard !all.isEmpty else {
+            throw ManagerError(message: "Steam build \(build) is not supported and no bundled profile can be carried forward. Update OnlineFix.")
         }
-        do {
-            let data = try SignatureDeriver.derive(client: clientURL(steamRoot: steamRoot), reference: reference)
-            try data.write(to: directory.appendingPathComponent("\(build).json"), options: .atomic)
-        } catch {
-            throw ManagerError(message: "Steam build \(build) is not supported and its profile could not be derived from \(reference.lastPathComponent): \(error.localizedDescription)")
+        var failures: [String] = []
+        for reference in older + newer {
+            do {
+                let data = try SignatureDeriver.derive(client: clientURL(steamRoot: steamRoot), reference: reference)
+                try data.write(to: directory.appendingPathComponent("\(build).json"), options: .atomic)
+                return
+            } catch {
+                failures.append("\(reference.lastPathComponent): \(error.localizedDescription)")
+            }
         }
+        throw ManagerError(message: "Steam build \(build) is not supported and no profile could be carried forward.\n" + failures.joined(separator: "\n"))
     }
 
     // Opening Manager after a Steam update quietly repairs the installed runtime:
