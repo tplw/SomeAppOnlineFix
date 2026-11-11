@@ -52,8 +52,8 @@ import Foundation
             bytes += Array(repeating: 0, count: max(0, size - bytes.count))
             return Array(bytes.prefix(size))
         }
-        func fixtureClient(code: [UInt8], root: URL) throws -> URL {
-            let directory = root.appendingPathComponent("derive-\(UUID().uuidString)")
+        func fixtureClient(code: [UInt8], root: URL, at target: URL? = nil) throws -> URL {
+            let directory = target ?? root.appendingPathComponent("derive-\(UUID().uuidString)")
             try fm.createDirectory(at: directory.appendingPathComponent("package"), withIntermediateDirectories: true)
             var header = little(UInt32(0xfeedfacf)) + little(UInt32(0x0100000c))
             header += little(UInt32(0)) + little(UInt32(6)) + little(UInt32(1)) + little(UInt32(152))
@@ -92,6 +92,28 @@ import Foundation
         print("Signature derivation checks passed: masked relative branch, synthetic client.")
         try expectFailure { _ = try SignatureDeriver.derive(client: try fixtureClient(code: Array(repeating: 0, count: 64), root: temporary), reference: referenceProfile) }
         try expectFailure { _ = try SignatureDeriver.derive(client: try fixtureClient(code: changedCode + changedCode, root: temporary), reference: referenceProfile) }
+        // Installer integration: a missing runtime profile is derived from the
+        // bundled reference and written where ONLINEFIX_SIG expects it.
+        let deriveResources = temporary.appendingPathComponent("derive-resources")
+        try fm.createDirectory(at: deriveResources, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: [
+            "arch": "arm64", "platform": "macos", "schema_version": 3, "profile_version": 1,
+            "steam_build": 1791918634,
+            "signatures": [["name": "CUser::SpawnProcess", "aob_hex": referencePattern, "match_offset": 0]],
+        ]).write(to: deriveResources.appendingPathComponent("1791918634.json"))
+        let deriveRoot = temporary.appendingPathComponent("derive-steam-root")
+        let deriveMacOS = deriveRoot.appendingPathComponent("Steam.AppBundle/Steam/Contents/MacOS")
+        _ = try fixtureClient(code: changedCode, root: temporary, at: deriveMacOS)
+        let deriveOutput = temporary.appendingPathComponent("derive-output")
+        try fm.createDirectory(at: deriveOutput, withIntermediateDirectories: true)
+        let deriveInstaller = SteamInstaller(app: temporary.appendingPathComponent("NoSteam.app"),
+                                             files: ManagerFiles(directory: temporary.appendingPathComponent("derive-settings")),
+                                             resources: deriveResources)
+        try deriveInstaller.deriveProfile(build: 1792618285, steamRoot: deriveRoot, into: deriveOutput)
+        let installedProfile = try JSONSerialization.jsonObject(with: Data(contentsOf: deriveOutput.appendingPathComponent("1792618285.json"))) as! [String: Any]
+        precondition(installedProfile["steam_build"] as? Int == 1792618285)
+        precondition((installedProfile["signatures"] as! [[String: Any]]).count == 1)
+        print("Signature derivation installer check passed: wrote a derived runtime profile.")
         let realClient = ProcessInfo.processInfo.environment["ONLINEFIX_TEST_CLIENT"]
             ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib").path
         if fm.fileExists(atPath: realClient),

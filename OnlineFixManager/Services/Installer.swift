@@ -126,7 +126,7 @@ struct SteamInstaller: Sendable {
     // shipped yet. Older references are tried first; a reference that no longer
     // matches is skipped in favour of the next one. Fails closed: a bad
     // derivation installs nothing.
-    private func deriveProfile(build: UInt32, steamRoot: URL, into directory: URL) throws {
+    func deriveProfile(build: UInt32, steamRoot: URL, into directory: URL) throws {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: directory.appendingPathComponent("\(build).json").path) else { return }
         let all = (try? fm.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil))?

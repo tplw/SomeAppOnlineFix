@@ -478,8 +478,11 @@ struct ManagerView: View {
     private func buildDiagnostics() -> String {
         var lines: [String] = []
         let steam = URL(fileURLWithPath: steamPath, isDirectory: true)
-        let client = steam.appendingPathComponent("Contents/MacOS/steamclient.dylib")
-        if let value = try? SignatureDeriver.clientBuild(client: client) {
+        let candidates = [steam.appendingPathComponent("Contents/MacOS/steamclient.dylib"),
+                          FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                            "Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib")]
+        let client = candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        if let client, let value = try? SignatureDeriver.clientBuild(client: client) {
             lines.append("Steam build: \(value)")
             let installedProfile = files.runtime.appendingPathComponent("\(value).json")
             let bundledProfile = Bundle.main.resourceURL?.appendingPathComponent("runtime/\(value).json")

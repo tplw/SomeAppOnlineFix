@@ -30,9 +30,9 @@ bool of_argument(const char *command, const char *argument) {
     return false;
 }
 
-// A compat-tool launch must keep the real AppID through Steam's launch pipeline;
-// only the Steam pipe is rewritten to 480. Native launches keep the legacy
-// SpawnProcess rewrite unless the game explicitly asks for late routing.
+// A compat-tool launch can be routed late when the game opts in. The automatic
+// mode keeps the proven early SpawnProcess rewrite; direct launches without a
+// SpawnProcess session are always routed late by of_route_pipe().
 bool of_wine_command(const char *command) {
     if (!command) return false;
     static const char *const markers[] = {
@@ -67,10 +67,11 @@ void of_start(const char *command, uint64_t *game) {
         if (configured || of_argument(command, "-onlinefix")) {
             next.game = (uint32_t)*game;
             next.keep_id = keep || of_argument(command, "-realappid");
-            next.late = route == OF_ROUTE_LATE || (route == OF_ROUTE_AUTO && of_wine_command(command));
+            next.late = route == OF_ROUTE_LATE;
             if (!next.late) *game = 480;
-            of_log("launch game=%u mode=%s keep-id=%d command=%.180s", next.game,
-                   next.late ? "late" : "early", next.keep_id, command ? command : "");
+            of_log("launch game=%u mode=%s keep-id=%d compat=%d command=%.180s", next.game,
+                   next.late ? "late" : "early", next.keep_id, of_wine_command(command),
+                   command ? command : "");
         }
     }
     publish(next);

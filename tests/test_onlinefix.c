@@ -166,9 +166,12 @@ int main(void) {
     write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":\"early\"}]}");
     selected = 105600; of_start("/CrossOver/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine game.exe", &selected);
     assert(selected == 480 && of_session().game == 105600 && !of_session().late);
+    write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false,\"route\":\"late\"}]}");
+    selected = 105600; of_start("/CrossOver/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine game.exe", &selected);
+    assert(selected == 105600 && of_session().game == 105600 && of_session().late);
     write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false}]}");
     selected = 105600; of_start("/Applications/NotProton.app/Contents/Resources/wine64 game.exe", &selected);
-    assert(selected == 105600 && of_session().late);
+    assert(selected == 480 && !of_session().late);
     selected = 105600; of_start("Terraria.app/Contents/MacOS/Terraria", &selected);
     assert(selected == 480 && !of_session().late);
     assert(of_wine_command("wine-preloader game.exe") && of_wine_command("wineserver"));

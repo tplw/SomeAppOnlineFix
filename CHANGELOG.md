@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Late Steam-pipe routing for Wine/CrossOver games, with per-game Automatic, Early and Late modes.
-- Pipe-based fallback routes games launched outside Steam, including NotProton and third-party launchers.
+- Late Steam-pipe routing as an opt-in per-game mode and as the fallback for games launched outside Steam, including NotProton and third-party launchers.
+- Automatic routing keeps the proven early `SpawnProcess` rewrite for Steam-launched games.
 - Automatic Steam signature-profile derivation when Steam updates to an unshipped build.
 - Manager diagnostics for Steam build, profile status, coexisting hooks and routing history.
 - Launch command, routing mode and every AppID transition are written to the log.
