@@ -84,16 +84,20 @@ void of_start(const char *command, uint64_t *game) {
 
 // A configured game can connect without a SpawnProcess session: launched from
 // Finder, a third-party launcher, or a wrapper. Route it when its pipe appears.
+// A later direct launch replaces the previous session, so game A does not block
+// game B after A exits.
 bool of_route_pipe(uint32_t game) {
     if (!game || game == 480) return false;
-    if (of_session().game) return false;
+    OFSession active = of_session();
+    if (active.game == game) return false;
     bool keep = false;
     OFRoute route = OF_ROUTE_AUTO;
     OFPatches patches = OF_DEFAULT_PATCHES;
     if (!of_config_game(game, &keep, &route, &patches)) return false;
     OFSession next = {.game = game, .keep_id = keep, .late = true, .patches = patches};
     publish(next);
-    of_log("pipe launch game=%u mode=late keep-id=%d (no SpawnProcess session)", game, keep);
+    of_log("pipe launch game=%u mode=late keep-id=%d%s", game, keep,
+           active.game ? " (replacing previous session)" : " (no SpawnProcess session)");
     return true;
 }
 

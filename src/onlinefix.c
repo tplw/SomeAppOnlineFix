@@ -20,7 +20,7 @@ static uint32_t session_hook(void *engine, uint32_t game, uint8_t update) {
         if (s.game && game == s.game) {
             of_log("pipe AppID: %u -> 480 (mode=%s)", game, s.late ? "late" : "early");
             game = 480;
-        } else if (!s.game && of_route_pipe(game)) {
+        } else if (of_route_pipe(game)) {
             of_log("pipe AppID: %u -> 480 (pipe session)", game);
             game = 480;
         }

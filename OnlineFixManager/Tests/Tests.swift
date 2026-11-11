@@ -114,6 +114,8 @@ import Foundation
         precondition(installedProfile["steam_build"] as? Int == 1792618285)
         precondition((installedProfile["signatures"] as! [[String: Any]]).count == 1)
         print("Signature derivation installer check passed: wrote a derived runtime profile.")
+        // Official-profile parity requires a real Steam client and is skipped on CI.
+        // The synthetic cross-build derivation test above always runs.
         let realClient = ProcessInfo.processInfo.environment["ONLINEFIX_TEST_CLIENT"]
             ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib").path
         if fm.fileExists(atPath: realClient),

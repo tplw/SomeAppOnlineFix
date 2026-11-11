@@ -27,7 +27,7 @@ enum RouteMode: String, Codable, CaseIterable, Sendable {
 
     var detail: String {
         switch self {
-        case .auto: "Use late routing for Wine/CrossOver launches and early routing for native games."
+        case .auto: "Use the early launch rewrite for Steam-launched games. Direct or third-party launches use late pipe routing."
         case .early: "Rewrite the AppID before Steam builds the launch environment. Legacy behaviour."
         case .late: "Launch the real game and rewrite only its Steam pipe to 480. Safer for compatibility tools and DRM."
         }

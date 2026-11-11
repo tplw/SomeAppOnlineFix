@@ -181,6 +181,14 @@ int main(void) {
     assert(of_route_pipe(105600));
     assert(of_session().game == 105600 && of_session().late && !of_session().keep_id);
     assert(!of_route_pipe(105600) && !of_route_pipe(480) && !of_route_pipe(739630) && !of_route_pipe(0));
+    write_config(config, "{\"games\":[{\"id\":105600,\"keepRealAppID\":false},{\"id\":413150,\"keepRealAppID\":false}]}");
+    selected = 105600; of_start("game", &selected);
+    assert(of_session().game == 105600 && !of_session().late);
+    assert(of_route_pipe(413150));
+    assert(of_session().game == 413150 && of_session().late);
+    assert(of_route_pipe(105600));
+    assert(of_session().game == 105600 && of_session().late);
+    assert(!of_route_pipe(105600));
     write_config(config, "{\"games\":[]}");
     selected = 105600; of_start("game", &selected);
     assert(selected == 105600 && !of_session().game);
