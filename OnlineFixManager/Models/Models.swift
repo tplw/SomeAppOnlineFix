@@ -46,6 +46,9 @@ struct ManagedGame: Codable, Identifiable, Equatable {
     var picoPark2Photon = false
     var phasmophobiaPhotonAppID = ""
     var repoPhoton = RepoPhotonIDs()
+    // Written by a newer local Valheim build. This branch preserves the field but
+    // does not implement the PlayFab patch, so it must survive a save/load cycle.
+    var valheimPlayFab = false
 
     static let fileFixCatalog = [
         ManagedGame(id: 105600, name: "Terraria"),
@@ -55,7 +58,7 @@ struct ManagedGame: Codable, Identifiable, Equatable {
     ]
 
     var supportsFileFix: Bool { Self.fileFixCatalog.contains { $0.id == id } }
-    var hasFileFix: Bool { patches.terrariaServerEnvironment || picoPark2Photon || !phasmophobiaPhotonAppID.isEmpty || !repoPhoton.isEmpty }
+    var hasFileFix: Bool { patches.terrariaServerEnvironment || picoPark2Photon || !phasmophobiaPhotonAppID.isEmpty || !repoPhoton.isEmpty || valheimPlayFab }
     var fileFixInstalled: Bool {
         if id == 3241660 {
             guard let installDirectory else { return false }
@@ -73,6 +76,7 @@ struct ManagedGame: Codable, Identifiable, Equatable {
         game.picoPark2Photon = false
         game.phasmophobiaPhotonAppID = ""
         game.repoPhoton = RepoPhotonIDs()
+        game.valheimPlayFab = false
         return game
     }
 
@@ -134,7 +138,7 @@ extension PatchSettings {
 }
 
 extension ManagedGame {
-    private enum CodingKeys: String, CodingKey { case id, name, keepRealAppID, route, imageURL, patches, installDirectory, picoPark2Photon, phasmophobiaPhotonAppID, repoPhoton }
+    private enum CodingKeys: String, CodingKey { case id, name, keepRealAppID, route, imageURL, patches, installDirectory, picoPark2Photon, phasmophobiaPhotonAppID, repoPhoton, valheimPlayFab }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -148,6 +152,7 @@ extension ManagedGame {
         picoPark2Photon = values.contains(.picoPark2Photon) ? try values.decode(Bool.self, forKey: .picoPark2Photon) : false
         repoPhoton = values.contains(.repoPhoton) ? try values.decode(RepoPhotonIDs.self, forKey: .repoPhoton) : RepoPhotonIDs()
         phasmophobiaPhotonAppID = values.contains(.phasmophobiaPhotonAppID) ? try values.decode(String.self, forKey: .phasmophobiaPhotonAppID) : ""
+        valheimPlayFab = values.contains(.valheimPlayFab) ? try values.decode(Bool.self, forKey: .valheimPlayFab) : false
     }
 }
 
@@ -160,8 +165,9 @@ struct GameConfiguration: Codable, Equatable {
         self.fixes = fixes
     }
 
-    var separatedFileFixes: GameConfiguration {
-        var value = GameConfiguration(games: games.map(\.steamSettings), fixes: fixes.map(\.fileFixSettings))
+    var preservedFixes: [ManagedGame] { fixes.filter { !$0.supportsFileFix } }
+
+    var separatedFileFixes: GameConfiguration {        var value = GameConfiguration(games: games.map(\.steamSettings), fixes: fixes.map(\.fileFixSettings))
         // Move existing file fixes without changing which games use Steam routing.
         for game in games where game.hasFileFix && !value.fixes.contains(where: { $0.id == game.id }) {
             value.fixes.append(game.fileFixSettings)
@@ -196,10 +202,10 @@ struct GameConfiguration: Codable, Equatable {
                   list.allSatisfy({ !$0.patches.terrariaServerEnvironment || $0.id == 105600 }),
                   list.allSatisfy({ !$0.picoPark2Photon || $0.id == 2644470 }),
                   list.allSatisfy({ $0.repoPhoton.isEmpty || ($0.id == 3241660 && $0.repoPhoton.isValid) }),
+                  list.allSatisfy({ !$0.valheimPlayFab || $0.id == 892970 }),
                   list.allSatisfy({ $0.phasmophobiaPhotonAppID.isEmpty || ($0.id == 739630 && PhasmophobiaPatch.validateAppID($0.phasmophobiaPhotonAppID)) }) else {
                 throw ManagerError(message: "The game or fix list contains invalid settings or duplicate AppIDs.")
             }
         }
-        guard fixes.allSatisfy(\.supportsFileFix) else { throw ManagerError(message: "The fix list contains an unsupported game.") }
     }
 }

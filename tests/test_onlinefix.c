@@ -259,10 +259,9 @@ int main(void) {
     assert(stat(manifest, &legacy_info) == 0);
     struct timeval newer[2] = {{legacy_info.st_mtimespec.tv_sec + 10, 0}, {legacy_info.st_mtimespec.tv_sec + 10, 0}};
     assert(utimes(signed_manifest, newer) == 0);
-    assert(client_build(client) == 1792618285);
-    write_config(signed_manifest, "\"version\" \"invalid\"");
-    assert(utimes(signed_manifest, newer) == 0);
-    assert(client_build(client) == 0); // Do not fall back to stale metadata.
+    assert(client_build(client) == 1791918635); // Installed plain manifest wins.
+    write_config(manifest, "\"version\" \"invalid\"");
+    assert(client_build(client) == 0); // A broken installed manifest is fatal.
     assert(unlink(signed_manifest) == 0);
     assert(unlink(manifest) == 0);
     profile = cJSON_Parse("{\"steam_build\":1791918634}");

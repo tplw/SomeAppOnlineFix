@@ -4,3 +4,4 @@
 .DS_Store
 /docs/
 /OnlineFixManager/Models/PhotonServers.local.swift
+__pycache__/

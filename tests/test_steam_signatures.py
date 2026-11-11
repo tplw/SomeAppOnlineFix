@@ -57,7 +57,8 @@ with tempfile.TemporaryDirectory() as directory:
     os.utime(legacy, ns=(1, 1))
     current = package / "steam_client_signed-2_osx.manifest"
     current.write_text('"version" "1792618285"')
-    assert signatures.client_build(client) == 1792618285
+    # The installed plain manifest wins over a newer pending signed manifest.
+    assert signatures.client_build(client) == 1791918634
     reference = root / "reference.json"
     reference.write_text(json.dumps(dict(schema_version=3, profile_version=1, arch="arm64", platform="macos",
                                          signatures=[dict(name="target", aob_hex=old.hex(" "), match_offset=0)])))
@@ -66,14 +67,13 @@ with tempfile.TemporaryDirectory() as directory:
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     generated = json.loads(output.read_text())
-    assert generated["steam_build"] == 1792618285
+    assert generated["steam_build"] == 1791918634
     assert generated["signatures"][0]["aob_hex"] == pattern
     before = output.read_bytes()
     assert subprocess.run(command, capture_output=True).returncode != 0
     assert output.read_bytes() == before
-    current.write_text('"version" "invalid"')
+    legacy.write_text('"version" "invalid"')
     rejected(lambda: signatures.client_build(client))
-    current.write_text('"version" "1792618285"')
     client.write_bytes(header + segment + section + bytes(len(new)))
     missing = root / "missing.json"
     command[-1] = str(missing)

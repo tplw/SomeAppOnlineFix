@@ -12,15 +12,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ROOT / "signatures/macos.arm64"
 CLIENT = Path.home() / "Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib"
-VARIANTS = ("steam_client_signed-2_osx", "steam_client_signed_osx", "steam_client_osx")
+VARIANTS = ("steam_client_osx", "steam_client_signed-2_osx", "steam_client_signed_osx")
 
 
-def client_build(client):
-    manifests = [client.parent / "package" / f"{name}.manifest" for name in VARIANTS]
-    manifests = [path for path in manifests if path.exists()]
-    if not manifests:
-        raise ValueError("No Steam build manifest beside the client")
-    manifest = max(manifests, key=lambda path: path.stat().st_mtime_ns)
+def manifest_build(manifest):
     raw = manifest.read_bytes()
     if not 0 < len(raw) <= 1024 * 1024 or b"\0" in raw:
         raise ValueError(f"Invalid manifest: {manifest}")
@@ -28,6 +23,21 @@ def client_build(client):
     if len(versions) != 1 or not re.fullmatch(rb"[1-9][0-9]{0,9}", versions[0]) or int(versions[0]) > 0xffffffff:
         raise ValueError(f"Invalid Steam build: {manifest}")
     return int(versions[0])
+
+
+def client_build(client):
+    # The plain manifest describes the installed client. Signed manifests can be
+    # newer when an update is downloaded but inhibited by steam.cfg.
+    for name in VARIANTS:
+        manifest = client.parent / "package" / f"{name}.manifest"
+        if not manifest.exists():
+            continue
+        try:
+            return manifest_build(manifest)
+        except ValueError:
+            if name == "steam_client_osx":
+                raise
+    raise ValueError("No Steam build manifest beside the client")
 
 
 def text_section(data):

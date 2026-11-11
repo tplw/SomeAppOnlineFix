@@ -168,23 +168,31 @@ struct SteamInstaller: Sendable {
         }
         let client = clientURL(steamRoot: steamRoot)
         let package = client.deletingLastPathComponent().appendingPathComponent("package")
-        let manifests = ["steam_client_signed-2_osx", "steam_client_signed_osx", "steam_client_osx"].compactMap { name -> (URL, Date)? in
-            let url = package.appendingPathComponent("\(name).manifest")
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  let modified = attributes[.modificationDate] as? Date else { return nil }
-            return (url, modified)
-        }
-        let manifest = manifests.sorted { $0.1 > $1.1 }.first?.0
-        guard FileManager.default.isReadableFile(atPath: client.path),
-              let manifest,
-              let data = try? Data(contentsOf: manifest), data.count <= 1024 * 1024,
-              let text = String(data: data, encoding: .utf8), !text.contains("\0") else {
+        guard FileManager.default.isReadableFile(atPath: client.path) else {
             throw ManagerError(message: "Cannot verify the Steam client build. Start Steam once to finish its setup, then quit it and retry.")
         }
-        // shortcut: the manifest may be cached; runtime must also validate every signature against the loaded client.
-        let versions = SteamLibrary.pairs(text).filter { $0.0 == "version" }
-        guard versions.count == 1, let build = UInt32(versions[0].1), build > 0,
-              versions[0].1 == String(build) else {
+        // The plain manifest describes the installed client; signed manifests may
+        // be newer when an update is pending but inhibited by steam.cfg.
+        let names = ["steam_client_osx", "steam_client_signed-2_osx", "steam_client_signed_osx"]
+        var detected: UInt32?
+        for name in names {
+            let url = package.appendingPathComponent("\(name).manifest")
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            let data = try? Data(contentsOf: url)
+            if let data, data.count <= 1024 * 1024,
+               let text = String(data: data, encoding: .utf8), !text.contains("\0") {
+                let versions = SteamLibrary.pairs(text).filter { $0.0 == "version" }
+                if versions.count == 1, let build = UInt32(versions[0].1), build > 0,
+                   versions[0].1 == String(build) {
+                    detected = build
+                    break
+                }
+            }
+            if name == "steam_client_osx" {
+                throw ManagerError(message: "Cannot determine a valid Steam client build. Installation was blocked.")
+            }
+        }
+        guard let build = detected else {
             throw ManagerError(message: "Cannot determine a valid Steam client build. Installation was blocked.")
         }
         // A profile for a new build is derived during install; an existing profile

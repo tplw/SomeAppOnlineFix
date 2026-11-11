@@ -161,8 +161,17 @@ import Foundation
             let json = "{\"id\":105600,\"name\":\"Terraria\",\"keepRealAppID\":false,\"route\":\(value)}"
             try expectFailure { _ = try JSONDecoder().decode(ManagedGame.self, from: Data(json.utf8)) }
         }
+        let foreignFix = #"{"games":[],"fixes":[{"id":892970,"name":"Valheim","keepRealAppID":false,"valheimPlayFab":true}]}"#
+        let preserved = try JSONDecoder().decode(GameConfiguration.self, from: Data(foreignFix.utf8))
+        precondition(preserved.fixes.count == 1 && preserved.fixes[0].valheimPlayFab)
+        precondition(preserved.preservedFixes.count == 1)
+        try files.save(preserved)
+        let preservedAgain = try files.loadConfiguration()
+        precondition(preservedAgain.fixes.first?.valheimPlayFab == true)
+        var wrongPlayFab = ManagedGame(id: 105600, name: "Terraria")
+        wrongPlayFab.valheimPlayFab = true
+        try expectFailure { try files.save(GameConfiguration(games: [], fixes: [wrongPlayFab])) }
         try expectFailure { try files.save(GameConfiguration(games: [], fixes: migrated.fixes + migrated.fixes)) }
-        try expectFailure { try files.save(GameConfiguration(games: [], fixes: [ManagedGame(id: 413150, name: "Unsupported")])) }
         for value in ["null", "false", "{}"] {
             let invalid = "{\"games\":[],\"fixes\":\(value)}"
             try expectFailure { _ = try JSONDecoder().decode(GameConfiguration.self, from: Data(invalid.utf8)) }
@@ -438,11 +447,13 @@ import Foundation
         let signedManifest = buildManifest.deletingLastPathComponent().appendingPathComponent("steam_client_signed-2_osx.manifest")
         try Data(#""version" "1792618285""#.utf8).write(to: signedManifest)
         try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 60)], ofItemAtPath: signedManifest.path)
-        try check(installer.verifyClient(steamRoot: root) == 1792618285)
-        try Data(#""version" "invalid""#.utf8).write(to: signedManifest)
-        try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 60)], ofItemAtPath: signedManifest.path)
-        try expectFailure { try installer.verifyClient(steamRoot: root) }
+        // The installed plain manifest wins over a newer pending signed manifest.
+        try check(installer.verifyClient(steamRoot: root) == 1791918634)
         try fm.removeItem(at: signedManifest)
+        try Data(#""version" "invalid""#.utf8).write(to: buildManifest)
+        try expectFailure { try installer.verifyClient(steamRoot: root) }
+        try Data(#""osx" { "version" "1791918634" }"#.utf8).write(to: buildManifest)
+        try check(installer.verifyClient(steamRoot: root) == 1791918634)
         profile["steam_build"] = 1788652215
         try JSONSerialization.data(withJSONObject: profile).write(to: profileURL)
         try expectFailure { try installer.install(steamRoot: root) }

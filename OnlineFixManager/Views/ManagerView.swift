@@ -286,6 +286,10 @@ struct ManagerView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
+            if !fixes.filter({ !$0.supportsFileFix }).isEmpty {
+                Text("\(fixes.filter { !$0.supportsFileFix }.count) fix(es) from a newer build are preserved unchanged.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Text("Install a game, then refresh your library.")
                 .font(.caption).foregroundStyle(.secondary)
         }

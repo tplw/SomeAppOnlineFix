@@ -77,26 +77,7 @@ static const unsigned char *match(const unsigned char *code, size_t size, const 
     return found;
 }
 
-static uint32_t client_build(const char *path) {
-    const char *slash = strrchr(path, '/');
-    if (!slash || slash - path >= PATH_MAX) return 0;
-    char manifest[PATH_MAX], version[11] = {0};
-    uint64_t build = 0;
-    const char *variants[] = {"steam_client_signed-2_osx", "steam_client_signed_osx", "steam_client_osx"};
-    struct stat newest = {0};
-    bool found = false;
-    for (size_t i = 0; i < sizeof(variants) / sizeof(variants[0]); ++i) {
-        char candidate[PATH_MAX];
-        struct stat info;
-        int written = snprintf(candidate, sizeof(candidate), "%.*s/package/%s.manifest", (int)(slash - path), path, variants[i]);
-        if (written < 0 || (size_t)written >= sizeof(candidate)) return 0;
-        if (stat(candidate, &info)) continue;
-        if (!found || info.st_mtimespec.tv_sec > newest.st_mtimespec.tv_sec ||
-            (info.st_mtimespec.tv_sec == newest.st_mtimespec.tv_sec && info.st_mtimespec.tv_nsec > newest.st_mtimespec.tv_nsec)) {
-            strcpy(manifest, candidate); newest = info; found = true;
-        }
-    }
-    if (!found) return 0;
+static uint32_t manifest_build(const char *manifest) {
     FILE *file = fopen(manifest, "rb");
     if (!file) return 0;
     char *raw = calloc(1024 * 1024 + 1, 1);
@@ -104,6 +85,8 @@ static uint32_t client_build(const char *path) {
     size_t length = fread(raw, 1, 1024 * 1024 + 1, file);
     bool valid = !ferror(file) && length > 0 && length <= 1024 * 1024 && !memchr(raw, '\0', length);
     fclose(file);
+    char version[11] = {0};
+    uint64_t build = 0;
     regex_t expression;
     if (valid && regcomp(&expression, "\"version\"[[:space:]]*\"([^\"]*)\"", REG_EXTENDED) == 0) {
         regmatch_t hit[2];
@@ -127,6 +110,26 @@ static uint32_t client_build(const char *path) {
     } else valid = false;
     free(raw);
     return valid ? (uint32_t)build : 0;
+}
+
+static uint32_t client_build(const char *path) {
+    const char *slash = strrchr(path, '/');
+    if (!slash || slash - path >= PATH_MAX) return 0;
+    // The plain manifest describes the installed client. A signed manifest can
+    // be newer when an update is downloaded but inhibited by steam.cfg.
+    const char *variants[] = {"steam_client_osx", "steam_client_signed-2_osx", "steam_client_signed_osx"};
+    for (size_t i = 0; i < sizeof(variants) / sizeof(variants[0]); ++i) {
+        char candidate[PATH_MAX];
+        struct stat info;
+        int written = snprintf(candidate, sizeof(candidate), "%.*s/package/%s.manifest", (int)(slash - path), path, variants[i]);
+        if (written < 0 || (size_t)written >= sizeof(candidate)) return 0;
+        if (stat(candidate, &info)) continue;
+        uint32_t build = manifest_build(candidate);
+        // The plain manifest is first: if it exists but is invalid, fail instead
+        // of silently using a pending signed update's version.
+        if (build || i == 0) return build;
+    }
+    return 0;
 }
 
 static cJSON *load_profile(const char *location, uint32_t build) {

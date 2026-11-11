@@ -5,6 +5,8 @@
 - Late Steam-pipe routing as an opt-in per-game mode and as the fallback for games launched outside Steam, including NotProton and third-party launchers.
 - Automatic routing keeps the proven early `SpawnProcess` rewrite for Steam-launched games.
 - Automatic Steam signature-profile derivation when Steam updates to an unshipped build.
+- Build detection prefers the installed plain manifest over a newer pending signed manifest.
+- Preserve the Valheim PlayFab field and foreign fix entries from newer local builds instead of dropping or rejecting them.
 - Manager diagnostics for Steam build, profile status, coexisting hooks and routing history.
 - Launch command, routing mode and every AppID transition are written to the log.
 - Fixed the manager test suite failing on placeholder Photon catalog entries.

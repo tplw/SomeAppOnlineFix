@@ -59,20 +59,27 @@ enum SignatureDeriver {
         return try JSONSerialization.data(withJSONObject: profile, options: [.prettyPrinted, .sortedKeys])
     }
 
-    /// Steam stores the client build beside the client as a manifest; the newest
-    /// manifest wins, matching the runtime loader's choice.
+    /// Steam stores the client build beside the client as a manifest. The plain
+    /// manifest describes the installed files; signed manifests can be newer when
+    /// an update is pending but inhibited by steam.cfg.
     static func clientBuild(client: URL) throws -> UInt32 {
         let package = client.deletingLastPathComponent().appendingPathComponent("package", isDirectory: true)
-        let names = ["steam_client_signed-2_osx", "steam_client_signed_osx", "steam_client_osx"]
-        let manifests = names.compactMap { name -> (URL, Date)? in
+        let names = ["steam_client_osx", "steam_client_signed-2_osx", "steam_client_signed_osx"]
+        for name in names {
             let url = package.appendingPathComponent("\(name).manifest")
-            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-                  let date = values.contentModificationDate else { return nil }
-            return (url, date)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do {
+                return try manifestBuild(url)
+            } catch {
+                // An invalid installed manifest is fatal; a bad pending signed
+                // manifest is skipped in favour of the next available one.
+                if name == "steam_client_osx" { throw error }
+            }
         }
-        guard let manifest = manifests.max(by: { $0.1 < $1.1 })?.0 else {
-            throw Failure(message: "No Steam build manifest beside the client.")
-        }
+        throw Failure(message: "No Steam build manifest beside the client.")
+    }
+
+    private static func manifestBuild(_ manifest: URL) throws -> UInt32 {
         let raw = try Data(contentsOf: manifest)
         guard raw.count > 0, raw.count <= 1024 * 1024, !raw.contains(0),
               let text = String(data: raw, encoding: .utf8) else {
