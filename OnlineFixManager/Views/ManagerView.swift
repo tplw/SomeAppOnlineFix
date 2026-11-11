@@ -525,8 +525,13 @@ struct ManagerView: View {
             configLoaded = true
         } catch { configLoaded = false; errors.append("Cannot load games.json. The existing file was not changed.\n\(error.localizedDescription)") }
         installed = installer.isInstalled()
-        diagnostics = buildDiagnostics()
         let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Steam")
+        if installed {
+            let currentInstaller = installer
+            do { _ = try await Task.detached { try currentInstaller.refreshProfileIfNeeded(steamRoot: root) }.value }
+            catch { errors.append("Steam profile repair failed.\n\(error.localizedDescription)") }
+        }
+        diagnostics = buildDiagnostics()
         do { library = try await Task.detached { try SteamLibrary.scan(root: root) }.value }
         catch { errors.append("Cannot scan the Steam library: \(error.localizedDescription)") }
         if configLoaded, let game = fixGames.first(where: { $0.id == 2644470 }), let app = game.nativePatchApp {

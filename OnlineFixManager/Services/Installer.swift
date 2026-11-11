@@ -144,6 +144,18 @@ struct SteamInstaller: Sendable {
         }
     }
 
+    // Opening Manager after a Steam update quietly repairs the installed runtime:
+    // derive the new build's profile instead of leaving routing disabled.
+    func refreshProfileIfNeeded(steamRoot: URL) throws -> UInt32? {
+        guard isInstalled() else { return nil }
+        let build = try verifyClient(steamRoot: steamRoot)
+        guard !FileManager.default.fileExists(atPath: files.runtime.appendingPathComponent("\(build).json").path) else {
+            return build
+        }
+        try deriveProfile(build: build, steamRoot: steamRoot, into: files.runtime)
+        return build
+    }
+
     @discardableResult func verifyClient(steamRoot: URL) throws -> UInt32 {
         struct Profile: Decodable {
             let steam_build: UInt32

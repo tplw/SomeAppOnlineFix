@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Late Steam-pipe routing for Wine/CrossOver games, with per-game Automatic, Early and Late modes.
+- Pipe-based fallback routes games launched outside Steam, including NotProton and third-party launchers.
+- Automatic Steam signature-profile derivation when Steam updates to an unshipped build.
+- Manager diagnostics for Steam build, profile status, coexisting hooks and routing history.
+- Launch command, routing mode and every AppID transition are written to the log.
+- Fixed the manager test suite failing on placeholder Photon catalog entries.
+
 ## v2.0.0
 
 - CustomFix workflow for installing and managing game-specific fixes directly in Manager.
