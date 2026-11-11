@@ -112,13 +112,43 @@ struct SteamInstaller: Sendable {
         try operation()
     }
 
+    private func clientURL(steamRoot: URL) -> URL {
+        let bundled = app.appendingPathComponent("Contents/MacOS/steamclient.dylib")
+        return FileManager.default.fileExists(atPath: bundled.path) ? bundled
+            : steamRoot.appendingPathComponent("Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib")
+    }
+
+    private func profileURL(build: UInt32) -> URL {
+        resources.appendingPathComponent("\(build).json")
+    }
+
+    // Carry the newest bundled profile forward when Steam updated to a build we
+    // have not shipped yet. Fails closed: a bad derivation installs nothing.
+    private func deriveProfile(build: UInt32, steamRoot: URL, into directory: URL) throws {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: directory.appendingPathComponent("\(build).json").path) else { return }
+        let candidates = (try? fm.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "json" && UInt32($0.deletingPathExtension().lastPathComponent) != nil }
+            .sorted { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) > (UInt32($1.deletingPathExtension().lastPathComponent) ?? 0) }
+        // Prefer the newest profile older than the target build. A downgrade must
+        // not be carried from a profile that postdates the client.
+        let older = candidates?.filter { (UInt32($0.deletingPathExtension().lastPathComponent) ?? 0) < build }
+        guard let reference = older?.first ?? candidates?.first else {
+            throw ManagerError(message: "Steam build \(build) is not supported and no earlier profile can be carried forward. Update OnlineFix.")
+        }
+        do {
+            let data = try SignatureDeriver.derive(client: clientURL(steamRoot: steamRoot), reference: reference)
+            try data.write(to: directory.appendingPathComponent("\(build).json"), options: .atomic)
+        } catch {
+            throw ManagerError(message: "Steam build \(build) is not supported and its profile could not be derived from \(reference.lastPathComponent): \(error.localizedDescription)")
+        }
+    }
+
     @discardableResult func verifyClient(steamRoot: URL) throws -> UInt32 {
         struct Profile: Decodable {
             let steam_build: UInt32
         }
-        let bundled = app.appendingPathComponent("Contents/MacOS/steamclient.dylib")
-        let client = FileManager.default.fileExists(atPath: bundled.path) ? bundled
-            : steamRoot.appendingPathComponent("Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib")
+        let client = clientURL(steamRoot: steamRoot)
         let package = client.deletingLastPathComponent().appendingPathComponent("package")
         let manifests = ["steam_client_signed-2_osx", "steam_client_signed_osx", "steam_client_osx"].compactMap { name -> (URL, Date)? in
             let url = package.appendingPathComponent("\(name).manifest")
@@ -139,13 +169,13 @@ struct SteamInstaller: Sendable {
               versions[0].1 == String(build) else {
             throw ManagerError(message: "Cannot determine a valid Steam client build. Installation was blocked.")
         }
-        let profileURL = resources.appendingPathComponent("\(build).json")
-        guard FileManager.default.fileExists(atPath: profileURL.path) else {
-            throw ManagerError(message: "Steam build \(build) is not supported by this OnlineFix release. Installation was blocked.")
-        }
-        let profile = try JSONDecoder().decode(Profile.self, from: Data(contentsOf: profileURL))
-        guard profile.steam_build == build else {
-            throw ManagerError(message: "The bundled Steam compatibility profile does not match its filename. Rebuild OnlineFix Manager.")
+        // A profile for a new build is derived during install; an existing profile
+        // must still match its filename so a corrupt bundle cannot slip through.
+        if FileManager.default.fileExists(atPath: profileURL(build: build).path) {
+            let profile = try JSONDecoder().decode(Profile.self, from: Data(contentsOf: profileURL(build: build)))
+            guard profile.steam_build == build else {
+                throw ManagerError(message: "The bundled Steam compatibility profile does not match its filename. Rebuild OnlineFix Manager.")
+            }
         }
         return build
     }
@@ -179,6 +209,7 @@ struct SteamInstaller: Sendable {
                 guard try fingerprint(backup) == originalHash else { throw ManagerError(message: "Backup verification failed. Steam was not changed.") }
                 if fm.fileExists(atPath: files.runtime.path) { try fm.removeItem(at: files.runtime) }
                 try Self.run("/usr/bin/ditto", [resources.path, files.runtime.path])
+                try deriveProfile(build: build, steamRoot: steamRoot, into: files.runtime)
                 try Self.run("/usr/bin/ditto", [app.path, staging.path])
                 var environment = properties["LSEnvironment"] as? [String: String] ?? [:]
                 var libraries = (environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":").map(String.init)

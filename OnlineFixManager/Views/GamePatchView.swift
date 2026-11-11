@@ -18,6 +18,12 @@ struct GamePatchView: View {
             }
             Form {
                 Section("AppID reporting") {
+                    Picker("Launch routing", selection: $draft.route) {
+                        ForEach(RouteMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    Text(draft.route.detail).font(.caption).foregroundStyle(.secondary)
                     Toggle("Keep real AppID", isOn: $draft.keepRealAppID)
                         .help("Always report the real game ID. Matchmaking still uses 480.")
                     Toggle("Restore AppID at startup", isOn: $draft.patches.startupAppID)
@@ -35,12 +41,12 @@ struct GamePatchView: View {
             }.formStyle(.grouped)
             Text("Settings apply only to this game. Relaunch it after saving.").font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Restore Defaults") { draft.patches = PatchSettings(); draft.keepRealAppID = false }
+                Button("Restore Defaults") { draft.patches = PatchSettings(); draft.keepRealAppID = false; draft.route = .auto }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") { if onSave(draft) { dismiss() } }
                 .keyboardShortcut(.defaultAction)
             }
-        }.padding(24).frame(width: 520, height: 490)
+        }.padding(24).frame(width: 520, height: 560)
     }
 }

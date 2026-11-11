@@ -36,6 +36,7 @@ struct ManagerView: View {
     @ViewState private var fixGame: ManagedGame?
     @ViewState private var customGames: [ManagedGame] = []
     @ViewState private var selectedCustomGame: ManagedGame?
+    @ViewState private var diagnostics = ""
 
     private var fixGames: [ManagedGame] {
         GameConfiguration(games: games, fixes: fixes).fixGames(in: library)
@@ -406,6 +407,20 @@ struct ManagerView: View {
                         Button("Choose…") { chooseSteam() }
                     }.padding(12)
                 }
+                GroupBox("Diagnostics") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(diagnostics).font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack {
+                            Text("Steam build, profile, coexist hooks, last routing entries.").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Copy") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(diagnostics, forType: .string)
+                            }
+                        }
+                    }.padding(12)
+                }
                 GroupBox("Settings & logs") {
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 5) {
@@ -460,6 +475,45 @@ struct ManagerView: View {
         }.padding(24)
     }
 
+    private func buildDiagnostics() -> String {
+        var lines: [String] = []
+        let steam = URL(fileURLWithPath: steamPath, isDirectory: true)
+        let client = steam.appendingPathComponent("Contents/MacOS/steamclient.dylib")
+        if let value = try? SignatureDeriver.clientBuild(client: client) {
+            lines.append("Steam build: \(value)")
+            let installedProfile = files.runtime.appendingPathComponent("\(value).json")
+            let bundledProfile = Bundle.main.resourceURL?.appendingPathComponent("runtime/\(value).json")
+            if FileManager.default.fileExists(atPath: installedProfile.path) {
+                lines.append("Profile: installed at \(installedProfile.lastPathComponent)")
+            } else if let bundledProfile, FileManager.default.fileExists(atPath: bundledProfile.path) {
+                lines.append("Profile: bundled")
+            } else {
+                lines.append("Profile: missing (install derives it from the newest bundled build)")
+            }
+        } else {
+            lines.append("Steam build: unknown (start Steam once)")
+        }
+        lines.append("OnlineFix: \(installed ? "installed" : "not installed")")
+        let plist = steam.appendingPathComponent("Contents/Info.plist")
+        if let data = try? Data(contentsOf: plist),
+           let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           let environment = info["LSEnvironment"] as? [String: String],
+           let insert = environment["DYLD_INSERT_LIBRARIES"] {
+            let names = ["macsteam.dylib", "notproton.dylib", "cloud_redirect.dylib", "onlinefix.dylib"]
+            let present = names.filter { insert.contains($0) }
+            lines.append("Coexisting hooks: \(present.isEmpty ? "none" : present.joined(separator: ", "))")
+        }
+        let routing = log.components(separatedBy: .newlines).filter {
+            $0.contains("hook ") || $0.contains("launch game=") || $0.contains("pipe AppID") ||
+            $0.contains("networking active") || $0.contains("profile")
+        }
+        if !routing.isEmpty {
+            lines.append("Last routing entries:")
+            lines.append(contentsOf: routing.suffix(8).map { "  " + $0 })
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func reload() async {
         var errors: [String] = []
         do { customGames = try files.loadCustomFixes() }
@@ -471,6 +525,7 @@ struct ManagerView: View {
             configLoaded = true
         } catch { configLoaded = false; errors.append("Cannot load games.json. The existing file was not changed.\n\(error.localizedDescription)") }
         installed = installer.isInstalled()
+        diagnostics = buildDiagnostics()
         let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Steam")
         do { library = try await Task.detached { try SteamLibrary.scan(root: root) }.value }
         catch { errors.append("Cannot scan the Steam library: \(error.localizedDescription)") }

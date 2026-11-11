@@ -14,10 +14,31 @@ struct RepoPhotonIDs: Codable, Equatable, Sendable {
     }
 }
 
+enum RouteMode: String, Codable, CaseIterable, Sendable {
+    case auto, early, late
+
+    var title: String {
+        switch self {
+        case .auto: "Automatic"
+        case .early: "Early (launch AppID)"
+        case .late: "Late (Steam pipe only)"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .auto: "Use late routing for Wine/CrossOver launches and early routing for native games."
+        case .early: "Rewrite the AppID before Steam builds the launch environment. Legacy behaviour."
+        case .late: "Launch the real game and rewrite only its Steam pipe to 480. Safer for compatibility tools and DRM."
+        }
+    }
+}
+
 struct ManagedGame: Codable, Identifiable, Equatable {
     let id: UInt32
     var name: String
     var keepRealAppID = false
+    var route = RouteMode.auto
     var imageURL: URL? = nil
     var patches = PatchSettings()
     var installDirectory: URL? = nil
@@ -58,6 +79,7 @@ struct ManagedGame: Codable, Identifiable, Equatable {
     var fileFixSettings: ManagedGame {
         var game = self
         game.keepRealAppID = false
+        game.route = .auto
         game.patches = PatchSettings()
         game.patches.terrariaServerEnvironment = patches.terrariaServerEnvironment
         return game
@@ -112,13 +134,14 @@ extension PatchSettings {
 }
 
 extension ManagedGame {
-    private enum CodingKeys: String, CodingKey { case id, name, keepRealAppID, imageURL, patches, installDirectory, picoPark2Photon, phasmophobiaPhotonAppID, repoPhoton }
+    private enum CodingKeys: String, CodingKey { case id, name, keepRealAppID, route, imageURL, patches, installDirectory, picoPark2Photon, phasmophobiaPhotonAppID, repoPhoton }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(UInt32.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
         keepRealAppID = try values.decode(Bool.self, forKey: .keepRealAppID)
+        route = values.contains(.route) ? try values.decode(RouteMode.self, forKey: .route) : .auto
         imageURL = try values.decodeIfPresent(URL.self, forKey: .imageURL)
         patches = values.contains(.patches) ? try values.decode(PatchSettings.self, forKey: .patches) : PatchSettings()
         installDirectory = try values.decodeIfPresent(URL.self, forKey: .installDirectory)

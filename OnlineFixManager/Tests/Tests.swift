@@ -41,6 +41,74 @@ import Foundation
         }
         let profileURL = resources.appendingPathComponent("1791918634.json")
         var profile = try JSONSerialization.jsonObject(with: Data(contentsOf: profileURL)) as! [String: Any]
+        // Signature derivation: a new Steam build must be recoverable from the
+        // newest bundled profile; the real client check below must reproduce the
+        // official 1792618285 signature set byte for byte.
+        func little<T: FixedWidthInteger>(_ value: T) -> [UInt8] {
+            (0..<MemoryLayout<T>.size).map { UInt8(truncatingIfNeeded: value >> (8 * $0)) }
+        }
+        func padded(_ name: String, _ size: Int) -> [UInt8] {
+            var bytes = Array(name.utf8)
+            bytes += Array(repeating: 0, count: max(0, size - bytes.count))
+            return Array(bytes.prefix(size))
+        }
+        func fixtureClient(code: [UInt8], root: URL) throws -> URL {
+            let directory = root.appendingPathComponent("derive-\(UUID().uuidString)")
+            try fm.createDirectory(at: directory.appendingPathComponent("package"), withIntermediateDirectories: true)
+            var header = little(UInt32(0xfeedfacf)) + little(UInt32(0x0100000c))
+            header += little(UInt32(0)) + little(UInt32(6)) + little(UInt32(1)) + little(UInt32(152))
+            header += little(UInt32(0)) + little(UInt32(0))
+            var segment = little(UInt32(0x19)) + little(UInt32(152)) + padded("__TEXT", 16)
+            segment += little(UInt64(0)) + little(UInt64(0x1000)) + little(UInt64(0)) + little(UInt64(184 + code.count))
+            segment += little(UInt32(7)) + little(UInt32(5)) + little(UInt32(1)) + little(UInt32(0))
+            var section = padded("__text", 16) + padded("__TEXT", 16)
+            section += little(UInt64(0x8000)) + little(UInt64(code.count)) + little(UInt32(184)) + little(UInt32(2))
+            section += little(UInt32(0)) + little(UInt32(0)) + little(UInt32(0)) + little(UInt32(0))
+            section += little(UInt32(0)) + little(UInt32(0))
+            precondition(header.count == 32 && segment.count == 72 && section.count == 80)
+            let client = directory.appendingPathComponent("steamclient.dylib")
+            try Data(header + segment + section + code).write(to: client)
+            try Data(#""version" "1792618285""#.utf8).write(to: directory.appendingPathComponent("package/steam_client_osx.manifest"))
+            return client
+        }
+        let fixed = Array(repeating: UInt8(0xAA), count: 16)
+        let referenceCode = fixed + little(UInt32(0x94001234)) + fixed
+        let changedCode = fixed + little(UInt32(0x94005678)) + fixed
+        let referencePattern = referenceCode.map { String(format: "%02X", $0) }.joined(separator: " ")
+        let referenceProfile = temporary.appendingPathComponent("derive-reference.json")
+        try JSONSerialization.data(withJSONObject: [
+            "arch": "arm64", "platform": "macos", "schema_version": 3, "profile_version": 1,
+            "steam_build": 1791918634,
+            "signatures": [["name": "CUser::SpawnProcess", "aob_hex": referencePattern, "match_offset": 0]],
+        ]).write(to: referenceProfile)
+        let derived = try SignatureDeriver.derive(client: try fixtureClient(code: changedCode, root: temporary), reference: referenceProfile)
+        let derivedJSON = try JSONSerialization.jsonObject(with: derived) as! [String: Any]
+        precondition(derivedJSON["steam_build"] as? Int == 1792618285)
+        precondition(derivedJSON["profile_version"] as? Int == 2)
+        let derivedPattern = (derivedJSON["signatures"] as! [[String: Any]])[0]["aob_hex"] as! String
+        precondition(derivedPattern.split(separator: " ").enumerated().allSatisfy { index, token in
+            (16..<20).contains(index) ? token == "??" : token != "??"
+        })
+        print("Signature derivation checks passed: masked relative branch, synthetic client.")
+        try expectFailure { _ = try SignatureDeriver.derive(client: try fixtureClient(code: Array(repeating: 0, count: 64), root: temporary), reference: referenceProfile) }
+        try expectFailure { _ = try SignatureDeriver.derive(client: try fixtureClient(code: changedCode + changedCode, root: temporary), reference: referenceProfile) }
+        let realClient = ProcessInfo.processInfo.environment["ONLINEFIX_TEST_CLIENT"]
+            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib").path
+        if fm.fileExists(atPath: realClient),
+           try SignatureDeriver.clientBuild(client: URL(fileURLWithPath: realClient)) == 1792618285,
+           let officialData = try? Data(contentsOf: resources.appendingPathComponent("1792618285.json")) {
+            let data = try SignatureDeriver.derive(client: URL(fileURLWithPath: realClient), reference: profileURL)
+            let actual = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let official = try JSONSerialization.jsonObject(with: officialData) as! [String: Any]
+            let actualSignatures = actual["signatures"] as! [[String: Any]]
+            let officialSignatures = official["signatures"] as! [[String: Any]]
+            precondition(actualSignatures.count == officialSignatures.count)
+            for (actualEntry, officialEntry) in zip(actualSignatures, officialSignatures) {
+                precondition(actualEntry["name"] as? String == officialEntry["name"] as? String)
+                precondition(actualEntry["aob_hex"] as? String == officialEntry["aob_hex"] as? String)
+            }
+            print("Signature derivation parity passed: \(actualSignatures.count) targets match the official 1792618285 profile.")
+        }
         let clientData = Data("supported Steam client fixture".utf8)
         let sharedFixture = URL(fileURLWithPath: CommandLine.arguments[2])
         let files = ManagerFiles(directory: temporary.appendingPathComponent("settings"))
@@ -49,6 +117,7 @@ import Foundation
         let old = try JSONDecoder().decode(GameConfiguration.self, from: Data(legacy.utf8))
         precondition(old.games[0].patches == PatchSettings())
         precondition(!old.games[0].patches.terrariaServerEnvironment)
+        precondition(old.games[0].route == .auto)
         precondition(!old.games[0].picoPark2Photon)
         precondition(old.games[0].phasmophobiaPhotonAppID.isEmpty)
         let legacyFixJSON = #"{"games":[{"id":2644470,"name":"PICO PARK 2","keepRealAppID":true,"picoPark2Photon":true}]}"#
@@ -59,6 +128,17 @@ import Foundation
         precondition(migrated.fixes.count == 1 && migrated.fixes[0].picoPark2Photon && !migrated.fixes[0].keepRealAppID)
         try files.save(migrated)
         try check(files.loadConfiguration() == migrated)
+        var routed = ManagedGame(id: 105600, name: "Terraria", keepRealAppID: false)
+        routed.route = .late
+        try files.save([routed])
+        let savedRoute = try files.load().first?.route
+        let savedFixRoute = try files.loadConfiguration().fixes.first?.route
+        precondition(savedRoute == .late)
+        precondition(savedFixRoute == .auto)
+        for value in ["\"nope\"", "1", "null", "{}"] {
+            let json = "{\"id\":105600,\"name\":\"Terraria\",\"keepRealAppID\":false,\"route\":\(value)}"
+            try expectFailure { _ = try JSONDecoder().decode(ManagedGame.self, from: Data(json.utf8)) }
+        }
         try expectFailure { try files.save(GameConfiguration(games: [], fixes: migrated.fixes + migrated.fixes)) }
         try expectFailure { try files.save(GameConfiguration(games: [], fixes: [ManagedGame(id: 413150, name: "Unsupported")])) }
         for value in ["null", "false", "{}"] {
