@@ -27,10 +27,11 @@ make -j4
 open out/OnlineFixManager.app
 ```
 
-Supported Steam client builds are `1791918634` and `1792618285`. Steam build
-`1794424036` changed the hook targets structurally; OnlineFix blocks installation
-until a profile is available. See [STEAM_BUILDS.md](docs/steam-build-recovery.md)
-for the current state and recovery steps.
+Supported Steam client builds are `1791918634` and `1792618285`. The test machine
+runs `1792618285` with macsteam, NotProton and OnlineFix loaded; Steam build
+`1794424036` changed the hook targets structurally, so OnlineFix blocks
+installation until a profile is available. See [STEAM_BUILDS.md](STEAM_BUILDS.md)
+for the live state, pinning and recovery steps.
 
 ## Online fix routing
 

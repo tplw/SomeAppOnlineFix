@@ -1,4 +1,4 @@
-# Steam build changes and recovery
+# Steam build support and recovery
 
 OnlineFix hooks a fixed set of functions in `steamclient.dylib`. Profiles are
 shipped per Steam build:
@@ -6,7 +6,7 @@ shipped per Steam build:
 | Build | Status |
 |---|---|
 | 1791918634 | Supported |
-| 1792618285 | Supported |
+| 1792618285 | Supported and currently installed |
 | 1794424036 | Not supported: the seven hook targets changed structurally |
 
 The Manager derives a profile for a new build when the function layouts are
@@ -15,52 +15,68 @@ is blocked instead of writing hooks that would crash Steam.
 
 ## Current live state (2026-11-11)
 
-Steam updated to **1794424036**. The official client is installed and stable.
-The third-party hook tools were tested against it:
+The test machine runs a fully consistent **1792618285** client, reconstructed
+from Valve's old package set:
 
-- **NotProton 1.2.5** loads and works (Steam stays up, WebUI/compat hooks install).
-- **macsteam 0.8.2.4** loads 14/18 hooks and then crashes Steam with
-  `SIGBUS`/`KERN_PROTECTION_FAILURE`. It is therefore **not** in
-  `LSEnvironment` right now. License spoofing is blocked until macsteam ships
-  support for this build.
-- OnlineFix has no profile for 1794424036, so it is disabled on this build.
+- exact old `steam_osx` (8,709,904 bytes) and `SteamMacBootstrapper.tar.gz`;
+- all 14 framework symlinks and all 6,707 `steam_client_osx.installed` entries
+  verified (size, CRC32, symlink target CRC);
+- Valve bootstrapper verification passes;
+- macsteam **18/18** hooks, NotProton and OnlineFix loaded;
+- Terraria (native) and Casualties Unknown (Windows/NotProton) both registered by
+  Steam as AppID 480 in live runs.
 
-The user's Steam currently runs with only NotProton injected:
+The old client and update manifests are pinned with `uchg`, and `steam.cfg`
+contains `BootStrapperInhibitUpdateOnLaunch=enable`, so the 1794424036 updater
+cannot replace them. Steam may log a failed manifest save at launch; it continues
+on 1792618285.
 
-```
-LSEnvironment DYLD_INSERT_LIBRARIES =
-  /Applications/Steam.app/Contents/MacOS/notproton.dylib
-```
+## Why not 1794424036
 
-## When macsteam/OnlineFix support the new build
+The new build refactored the hook functions. Only 1 of 7 old signatures still
+matches; fuzzy matching finds changed functions that cannot be hooked safely.
+The installed macsteam release also crashes 1794424036 with `SIGBUS` after
+14/18 hooks.
+
+## Updating later
 
 1. Quit Steam.
-2. Reinstall/update macsteam and NotProton from their releases.
-3. Run OnlineFix Manager; if it reports the build as unsupported, stop. Do not
-   install until a profile exists.
-4. Add the hooks back in this order:
-
-```text
-/Applications/Steam.app/Contents/MacOS/macsteam.dylib:
-/Applications/Steam.app/Contents/MacOS/notproton.dylib:
-/Applications/Steam.app/Contents/MacOS/cloud_redirect.dylib:
-/Users/<you>/Library/Application Support/OnlineFixManager/runtime/onlinefix.dylib
-```
-
-Set the same value in both `/Applications/Steam.app/Contents/Info.plist` and
-`~/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Info.plist`,
-then ad-hoc sign both bundles. OnlineFix Manager does this automatically.
-5. Launch Steam and verify the logs:
+2. Clear the pins:
 
 ```bash
-rg 'hooks: 18/18|macsteam ready' ~/Library/Application\ Support/macSteam/macsteam.log
-rg 'routing ready' ~/Library/Application\ Support/OnlineFixManager/onlinefix.log
+chflags nouchg \
+  "$HOME/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib" \
+  "$HOME/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/package/steam_client_osx.manifest" \
+  "$HOME/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/package/steam_client_signed-2_osx.manifest" \
+  "$HOME/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/package/steam_client_signed-2_osx"
 ```
 
-## Why a manual downgrade is not offered
+3. Remove the inner `steam.cfg` update block if you want Steam to update.
+4. Update macsteam and NotProton first; test that Steam stays up with their new
+   dylibs.
+5. Install an OnlineFix release that lists the new build. Do not force the old
+   profile; the Manager will block an unsupported build.
+6. Re-add the hooks in this order if Manager does not:
 
-The old client's bootstrapper verifies exact file sizes, symlinks and the signed
-`steam_osx` against `steam_client_osx.installed`. Restoring the old packages by
-hand leaves broken symlinks and a mismatched executable, so Steam refuses to
-start or immediately re-updates. Use Valve's client as-is and wait for the hook
-tools to catch up; do not pin old files unless you have a verified full bundle.
+```text
+macsteam.dylib:notproton.dylib:cloud_redirect.dylib:onlinefix.dylib
+```
+
+Set the same `DYLD_INSERT_LIBRARIES` in both the outer and inner `Info.plist`,
+then ad-hoc sign both bundles.
+
+## Restoring 1792618285 again
+
+Use Valve's old packages, not a hand-edited copy:
+
+1. Read `steam_client_osx.manifest` for the 1792618285 file names.
+2. Download them from `https://client-update.fastly.steamstatic.com/` and verify
+   SHA-256.
+3. Extract with symlink support; restore the exact `steam_osx` from
+   `steam_osx.zip` and the bootstrapper payload.
+4. Generate `steam_client_osx.installed` from the tree (file size/CRC32,
+   symlink target CRC32, `OSVER=-71`, `VERSION=3`, `SHA1=` of the body).
+5. Verify every entry, then launch Valve's bootstrapper.
+
+A partial merge fails verification and makes Steam exit; do not skip the
+manifest check.
