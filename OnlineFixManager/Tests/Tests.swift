@@ -112,10 +112,14 @@ import Foundation
             let json = "{\"id\":3241660,\"name\":\"R.E.P.O.\",\"keepRealAppID\":false,\"repoPhoton\":\(value)}"
             try expectFailure { _ = try JSONDecoder().decode(ManagedGame.self, from: Data(json.utf8)) }
         }
+        precondition(Set(PhotonServers.all.map(\.appID)).count == PhotonServers.all.count)
         precondition(Set(PhotonServers.voiceServers.map(\.appID)).count == PhotonServers.voiceServers.count)
-        for server in PhotonServers.voiceServers where !server.appID.isEmpty {
+        // The checked-in catalog may ship placeholders; a real local override must be
+        // structurally valid, and any pair containing an invalid ID must be rejected.
+        for server in PhotonServers.voiceServers {
             for pun in PhotonServers.all {
-                precondition(RepoPhotonIDs(realtime: pun.appID, voice: server.appID).isValid)
+                let valid = RepoPhotonIDs(realtime: pun.appID).isValid && RepoPhotonIDs(realtime: server.appID).isValid
+                precondition(RepoPhotonIDs(realtime: pun.appID, voice: server.appID).isValid == valid)
             }
         }
         let punOnly = RepoPhotonIDs(realtime: repoIDs.realtime)
@@ -138,9 +142,9 @@ import Foundation
         precondition(!phasmInstall.fileFixInstalled)
         var phasm = ManagedGame(id: 739630, name: "Phasmophobia")
         precondition(Set(PhotonServers.all.map(\.appID)).count == PhotonServers.all.count)
-        for server in PhotonServers.all {
-            precondition(PhasmophobiaPatch.validateAppID(server.appID))
-            precondition(RepoPhotonIDs(realtime: server.appID).isValid)
+        precondition(!PhasmophobiaPatch.validateAppID("Place Photon AppId"))
+        for server in PhotonServers.all
+            where PhasmophobiaPatch.validateAppID(server.appID) && RepoPhotonIDs(realtime: server.appID).isValid {
             phasm.phasmophobiaPhotonAppID = server.appID
             try files.save(GameConfiguration(games: [], fixes: [phasm]))
             try check(files.loadConfiguration().fixes == [phasm.fileFixSettings])
