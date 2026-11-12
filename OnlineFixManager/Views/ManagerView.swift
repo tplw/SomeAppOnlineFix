@@ -304,7 +304,7 @@ struct ManagerView: View {
                 .frame(height: 112).clipped().accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(game.name).font(.headline).lineLimit(1)
-                    Text(game.id == 105600 ? "Server environment fix" : "Photon multiplayer fix")
+                    Text(game.id == 105600 ? "Server environment fix" : game.id == 892970 ? "Native online fix" : "Photon multiplayer fix")
                         .font(.callout).foregroundStyle(.secondary)
                     Text([739630, 3241660].contains(game.id) ? "Windows / NotProton" : "Native macOS")
                         .font(.caption).foregroundStyle(.secondary)
@@ -623,8 +623,11 @@ struct ManagerView: View {
         var changedPicoApp: URL?
         let previousRepo: RepoPhotonIDs = fixes.first(where: { $0.id == 3241660 })?.repoPhoton ?? RepoPhotonIDs()
         let nextRepo: RepoPhotonIDs = next.first(where: { $0.id == 3241660 })?.repoPhoton ?? RepoPhotonIDs()
+        let previousValheim = fixes.first(where: { $0.id == 892970 })?.valheimPlayFab ?? false
+        let nextValheim = next.first(where: { $0.id == 892970 })?.valheimPlayFab ?? false
         var changedRepoDirectory: URL?
         var changedPhasmDirectory: URL?
+        var changedValheimDirectory: URL?
         do {
             try GameConfiguration(games: games, fixes: next).validate()
             if previous != enabled {
@@ -668,6 +671,14 @@ struct ManagerView: View {
                 try RepoPatch.setAppIDs(nextRepo, directory: directory)
                 changedRepoDirectory = directory
             }
+            if previousValheim != nextValheim {
+                guard let directory = library.first(where: { $0.id == 892970 })?.installDirectory
+                    ?? fixes.first(where: { $0.id == 892970 })?.installDirectory else {
+                    throw ManagerError(message: "Install Valheim and refresh the Steam library before changing its native fix.")
+                }
+                try ValheimPatch.setEnabled(nextValheim, directory: directory)
+                changedValheimDirectory = directory
+            }
             try files.save(GameConfiguration(games: games, fixes: next))
             fixes = next
             message = "Saved. Relaunch the affected game to apply changes."
@@ -681,6 +692,9 @@ struct ManagerView: View {
                 }
                 if let directory = changedPhasmDirectory {
                     try PhasmophobiaPatch.setAppID(previousPhasm, directory: directory)
+                }
+                if let directory = changedValheimDirectory {
+                    try ValheimPatch.setEnabled(previousValheim, directory: directory)
                 }
                 if let app = changedPicoApp {
                     try PicoPark2Patch.setEnabled(previousPico, app: app)

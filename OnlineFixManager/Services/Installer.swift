@@ -275,17 +275,60 @@ struct SteamInstaller: Sendable {
         }
     }
 
+    private func hasInjection() -> Bool {
+        guard let value = try? info(at: plist), let environment = value["LSEnvironment"] as? [String: String] else { return false }
+        return (environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":").map(String.init).contains(library.path)
+    }
+
+    private func stripInjection(from staging: URL) throws {
+        let stagedPlist = staging.appendingPathComponent("Contents/Info.plist")
+        var properties = try info(at: stagedPlist)
+        var environment = properties["LSEnvironment"] as? [String: String] ?? [:]
+        var libraries = (environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":").map(String.init)
+        libraries.removeAll { $0 == library.path }
+        if libraries.isEmpty {
+            environment.removeValue(forKey: "DYLD_INSERT_LIBRARIES")
+        } else {
+            environment["DYLD_INSERT_LIBRARIES"] = libraries.joined(separator: ":")
+        }
+        environment.removeValue(forKey: "ONLINEFIX_CONFIG")
+        environment.removeValue(forKey: "ONLINEFIX_LOG")
+        environment.removeValue(forKey: "ONLINEFIX_SIG")
+        if environment.isEmpty {
+            properties.removeValue(forKey: "LSEnvironment")
+        } else {
+            properties["LSEnvironment"] = environment
+        }
+        let data = try PropertyListSerialization.data(fromPropertyList: properties, format: .xml, options: 0)
+        try data.write(to: stagedPlist, options: .atomic)
+        try Self.run("/usr/bin/codesign", ["--force", "--sign", "-", staging.appendingPathComponent("Contents/MacOS/steam_osx").path])
+        try Self.run("/usr/bin/codesign", ["--force", "--sign", "-", staging.path])
+    }
+
     func uninstall(steamRoot: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Steam")) throws {
         try locked {
             let fm = FileManager.default
-            let record = try JSONDecoder().decode(Receipt.self, from: Data(contentsOf: receipt))
-            guard record.appPath == app.path else { throw ManagerError(message: "This backup belongs to a different Steam.app.") }
-            let actual = try fingerprint(app)
-            guard actual == record.installedHash else {
-                throw ManagerError(message: "Steam changed after installation. Refusing to restore an older bundle. Keep the backup; use a clean Steam installation to recover.")
+            let hasBackup = fm.fileExists(atPath: backup.path)
+            let record: Receipt?
+            if fm.fileExists(atPath: receipt.path) {
+                record = try JSONDecoder().decode(Receipt.self, from: Data(contentsOf: receipt))
+            } else {
+                record = nil
             }
-            guard try fingerprint(backup) == record.originalHash else { throw ManagerError(message: "The backup changed or is incomplete. Steam was not modified.") }
+            if let record {
+                guard record.appPath == app.path else { throw ManagerError(message: "This backup belongs to a different Steam.app.") }
+                let actual = try fingerprint(app)
+                guard actual == record.installedHash else {
+                    throw ManagerError(message: "Steam changed after installation. Refusing to restore an older bundle. Keep the backup; use a clean Steam installation to recover.")
+                }
+                guard try fingerprint(backup) == record.originalHash else { throw ManagerError(message: "The backup changed or is incomplete. Steam was not modified.") }
+            } else {
+                guard hasBackup || isInstalled() || hasInjection() else {
+                    throw ManagerError(message: "OnlineFix is not installed in this Steam.app.")
+                }
+                if hasBackup { _ = try info(at: backup.appendingPathComponent("Contents/Info.plist")) }
+            }
             let configuration = try files.loadConfiguration()
             let fixes = configuration.fixes
             var updatedFixes = fixes
@@ -293,10 +336,16 @@ struct SteamInstaller: Sendable {
             var restoredPicoApp: URL?
             var restoredRepoDirectory: URL?
             var restoredPhasmDirectory: URL?
+            var restoredValheimDirectory: URL?
             var settingsChanged = false
             var exchanged = false
             let staging = app.deletingLastPathComponent().appendingPathComponent(".OnlineFix-restore-\(UUID().uuidString).app")
-            try Self.run("/usr/bin/ditto", [backup.path, staging.path])
+            if hasBackup {
+                try Self.run("/usr/bin/ditto", [backup.path, staging.path])
+            } else {
+                try Self.run("/usr/bin/ditto", [app.path, staging.path])
+                try stripInjection(from: staging)
+            }
             do {
                 if let index = fixes.firstIndex(where: { $0.id == 105600 && $0.patches.terrariaServerEnvironment }) {
                     guard let directory = try SteamLibrary.scan(root: steamRoot)
@@ -336,6 +385,15 @@ struct SteamInstaller: Sendable {
                     restoredRepoDirectory = directory
                     updatedFixes[index].repoPhoton = RepoPhotonIDs()
                 }
+                if let index = fixes.firstIndex(where: { $0.id == 892970 && $0.valheimPlayFab }) {
+                    guard let directory = try SteamLibrary.scan(root: steamRoot)
+                        .first(where: { $0.id == 892970 })?.installDirectory ?? fixes[index].installDirectory else {
+                        throw ManagerError(message: "Cannot locate Valheim to restore its native fix. Reconnect its Steam library and retry uninstalling.")
+                    }
+                    try ValheimPatch.setEnabled(false, directory: directory)
+                    restoredValheimDirectory = directory
+                    updatedFixes[index].valheimPlayFab = false
+                }
                 if updatedFixes != fixes {
                     try files.save(GameConfiguration(games: configuration.games, fixes: updatedFixes))
                     settingsChanged = true
@@ -354,6 +412,9 @@ struct SteamInstaller: Sendable {
                        let game = fixes.first(where: { $0.id == 739630 }) {
                         try PhasmophobiaPatch.setAppID(game.phasmophobiaPhotonAppID, directory: directory)
                     }
+                    if let directory = restoredValheimDirectory {
+                        try ValheimPatch.setEnabled(true, directory: directory)
+                    }
                     if let picoApp = restoredPicoApp {
                         try PicoPark2Patch.setEnabled(true, app: picoApp)
                     }
@@ -366,9 +427,9 @@ struct SteamInstaller: Sendable {
                 throw uninstallError
             }
             try? fm.removeItem(at: staging)
-            try fm.removeItem(at: receipt)
-            try fm.removeItem(at: backup.deletingLastPathComponent())
-            try fm.removeItem(at: files.runtime)
+            try? fm.removeItem(at: receipt)
+            try? fm.removeItem(at: backup.deletingLastPathComponent())
+            try? fm.removeItem(at: files.runtime)
         }
     }
 }

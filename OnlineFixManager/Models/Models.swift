@@ -54,12 +54,14 @@ struct ManagedGame: Codable, Identifiable, Equatable {
         ManagedGame(id: 105600, name: "Terraria"),
         ManagedGame(id: 2644470, name: "PICO PARK 2"),
         ManagedGame(id: 739630, name: "Phasmophobia"),
-        ManagedGame(id: 3241660, name: "R.E.P.O.")
+        ManagedGame(id: 3241660, name: "R.E.P.O."),
+        ManagedGame(id: 892970, name: "Valheim")
     ]
 
     var supportsFileFix: Bool { Self.fileFixCatalog.contains { $0.id == id } }
     var hasFileFix: Bool { patches.terrariaServerEnvironment || picoPark2Photon || !phasmophobiaPhotonAppID.isEmpty || !repoPhoton.isEmpty || valheimPlayFab }
     var fileFixInstalled: Bool {
+        if id == 892970 { return ValheimPatch.isInstalled(directory: installDirectory) }
         if id == 3241660 {
             guard let installDirectory else { return false }
             return FileManager.default.fileExists(atPath: installDirectory.appendingPathComponent("REPO_Data/Managed/Assembly-CSharp.dll").path)

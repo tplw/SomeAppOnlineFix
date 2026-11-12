@@ -166,7 +166,7 @@ import Foundation
         let foreignFix = #"{"games":[],"fixes":[{"id":892970,"name":"Valheim","keepRealAppID":false,"valheimPlayFab":true}]}"#
         let preserved = try JSONDecoder().decode(GameConfiguration.self, from: Data(foreignFix.utf8))
         precondition(preserved.fixes.count == 1 && preserved.fixes[0].valheimPlayFab)
-        precondition(preserved.preservedFixes.count == 1)
+        precondition(preserved.preservedFixes.isEmpty)
         try files.save(preserved)
         let preservedAgain = try files.loadConfiguration()
         precondition(preservedAgain.fixes.first?.valheimPlayFab == true)
@@ -181,13 +181,14 @@ import Foundation
         var relocatedPico = ManagedGame(id: 2644470, name: "PICO PARK 2")
         relocatedPico.installDirectory = temporary.appendingPathComponent("relocated-pico")
         let fixRows = migrated.fixGames(in: [relocatedPico, ManagedGame(id: 413150, name: "Unsupported")])
-        precondition(fixRows.count == 4 && !fixRows.contains(where: { $0.id == 413150 }))
+        precondition(fixRows.count == 5 && !fixRows.contains(where: { $0.id == 413150 }))
         let picoRow = fixRows.first(where: { $0.id == 2644470 })!
         precondition(picoRow.picoPark2Photon && picoRow.installDirectory == relocatedPico.installDirectory)
         precondition(migrated.fixGames(in: []).first(where: { $0.id == 2644470 })?.picoPark2Photon == true)
         let catalog = GameConfiguration(games: []).fixGames(in: [])
-        precondition(catalog.count == 4 && Set(catalog.map(\.id)).count == 4)
+        precondition(catalog.count == 5 && Set(catalog.map(\.id)).count == 5)
         precondition(catalog.allSatisfy { !$0.fileFixInstalled && !$0.hasFileFix })
+
         // A remembered install path or leftover empty folder does not mean the game is installed.
         for id: UInt32 in [3241660, 739630] {
             var missing = ManagedGame(id: id, name: "Uninstalled game")
@@ -471,6 +472,7 @@ import Foundation
         precondition(environment["DYLD_INSERT_LIBRARIES"] == "/tmp/existing.dylib:" + files.runtime.appendingPathComponent("onlinefix.dylib").path)
         precondition(environment["ONLINEFIX_CONFIG"] == files.config.path)
         precondition(environment["ONLINEFIX_SIG"] == files.runtime.path)
+
         try expectFailure { try installer.install(steamRoot: root) }
         let changed = app.appendingPathComponent("Contents/Resources/update-marker")
         try Data("updated".utf8).write(to: changed)
@@ -483,6 +485,54 @@ import Foundation
         try check(Data(contentsOf: app.appendingPathComponent("Contents/MacOS/steam_osx")) == originalExecutable)
         try check(files.load() == [game])
         try SteamInstaller.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
+
+        // Uninstall recovers from a missing receipt when the backup is still present.
+        try installer.install(steamRoot: root)
+        precondition(installer.isInstalled())
+        try fm.removeItem(at: files.directory.appendingPathComponent("installation.json"))
+        try installer.uninstall()
+        precondition(!installer.isInstalled())
+        try check(Data(contentsOf: plist) == originalInfo)
+        try check(files.load() == [game])
+
+        // Uninstall strips the injection when both the receipt and backup are gone.
+        try installer.install(steamRoot: root)
+        precondition(installer.isInstalled())
+        try fm.removeItem(at: files.directory.appendingPathComponent("installation.json"))
+        try fm.removeItem(at: files.directory.appendingPathComponent("backup"))
+        try installer.uninstall()
+        precondition(!installer.isInstalled())
+        let stripped = try PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as! [String: Any]
+        let strippedEnvironment = stripped["LSEnvironment"] as! [String: String]
+        precondition(strippedEnvironment["EXISTING_SETTING"] == "preserved")
+        precondition(strippedEnvironment["DYLD_INSERT_LIBRARIES"] == "/tmp/existing.dylib")
+        try SteamInstaller.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
+
+        // Native Valheim fix installs the plugin/launcher and restores the binary.
+        let valheim = temporary.appendingPathComponent("Valheim")
+        let valheimMac = valheim.appendingPathComponent("valheim.app/Contents/MacOS")
+        try fm.createDirectory(at: valheimMac, withIntermediateDirectories: true)
+        try fm.copyItem(at: URL(fileURLWithPath: "/bin/echo"), to: valheimMac.appendingPathComponent("Valheim"))
+        let valheimInfo: [String: Any] = ["CFBundleIdentifier": "test.valheim", "CFBundleExecutable": "Valheim",
+                                          "CFBundlePackageType": "APPL", "CFBundleVersion": "1"]
+        try PropertyListSerialization.data(fromPropertyList: valheimInfo, format: .xml, options: 0)
+            .write(to: valheim.appendingPathComponent("valheim.app/Contents/Info.plist"))
+        try fm.createDirectory(at: valheim.appendingPathComponent("BepInEx/core"), withIntermediateDirectories: true)
+        try Data("bepinex".utf8).write(to: valheim.appendingPathComponent("BepInEx/core/BepInEx.dll"))
+        try Data("doorstop".utf8).write(to: valheim.appendingPathComponent("libdoorstop.dylib"))
+        let pluginFixture = temporary.appendingPathComponent("ValheimOnlineFix.dll")
+        try Data("plugin".utf8).write(to: pluginFixture)
+        precondition(!ValheimPatch.isInstalled(directory: valheim))
+        try ValheimPatch.setEnabled(true, directory: valheim, plugin: pluginFixture)
+        precondition(ValheimPatch.isInstalled(directory: valheim))
+        let wrapperText = try String(contentsOf: valheimMac.appendingPathComponent("Valheim"), encoding: .utf8)
+        precondition(wrapperText.contains("Valheim.real"))
+        precondition(fm.fileExists(atPath: valheimMac.appendingPathComponent("Valheim.real").path))
+        precondition(fm.fileExists(atPath: valheim.appendingPathComponent("BepInEx/plugins/ValheimOnlineFix.dll").path))
+        try ValheimPatch.setEnabled(false, directory: valheim)
+        precondition(!ValheimPatch.isInstalled(directory: valheim))
+        precondition(fm.fileExists(atPath: valheimMac.appendingPathComponent("Valheim").path))
+        precondition(!fm.fileExists(atPath: valheimMac.appendingPathComponent("Valheim.real").path))
 
         try Data(#""osx" { "version" "1788652215" }"#.utf8).write(to: buildManifest)
         try expectFailure { try installer.install(steamRoot: root) }

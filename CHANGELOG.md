@@ -1,3 +1,12 @@
+## Unreleased
+
+- Valheim is a built-in fix in Available fixes. It installs the native BepInEx
+  plugin and launcher, requires BepInEx 5.4.23.6 plus libdoorstop.dylib, and
+  restores the stock binary on disable/uninstall.
+- Uninstall now recovers when `installation.json` or the backup is missing:
+  it restores the backup if present, otherwise strips the OnlineFix injection
+  from Steam.app and re-signs it.
+
 # Changelog
 
 ## v2.1.0

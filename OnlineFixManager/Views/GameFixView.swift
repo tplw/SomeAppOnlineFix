@@ -29,6 +29,14 @@ struct GameFixView: View {
                       voice: draft.repoPhoton.voice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
+    private var canConfigure: Bool {
+        if draft.id == 892970 {
+            return ValheimPatch.canInstall(directory: game.installDirectory)
+                || ValheimPatch.hasWrapper(directory: game.installDirectory)
+        }
+        return game.fileFixInstalled
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
@@ -52,6 +60,18 @@ struct GameFixView: View {
                                 .disabled(!supportsNativePatch)
                             Text("Apple Silicon macOS only. Quit the game before saving. Disabling restores backups.")
                                 .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if draft.id == 892970 {
+                    Section("Valheim · Native macOS") {
+                        Toggle("Native online fix", isOn: $draft.valheimPlayFab)
+                            .disabled(!canConfigure)
+                        Text("Installs the BepInEx plugin and launcher. Requires BepInEx 5.4.23.6 and libdoorstop.dylib in the game folder. Quit Valheim before saving.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if !ValheimPatch.canInstall(directory: game.installDirectory) {
+                            Text("Install Valheim, BepInEx and libdoorstop first.")
+                                .font(.caption).foregroundStyle(.red)
                         }
                     }
                 }
@@ -112,8 +132,8 @@ struct GameFixView: View {
             }.formStyle(.grouped)
             Text("Relaunch the game after saving.").font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Restore Defaults") { draft.patches.terrariaServerEnvironment = false; draft.picoPark2Photon = false; phasmEnabled = false; phasmAppID = ""; repoEnabled = false }
-                    .disabled(!game.fileFixInstalled)
+                Button("Restore Defaults") { draft.patches.terrariaServerEnvironment = false; draft.picoPark2Photon = false; phasmEnabled = false; phasmAppID = ""; repoEnabled = false; draft.valheimPlayFab = false }
+                    .disabled(!canConfigure)
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
@@ -122,9 +142,9 @@ struct GameFixView: View {
                     updated.phasmophobiaPhotonAppID = phasmEnabled ? phasmAppID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() : ""
                     if onSave(updated) { dismiss() }
                 }
-                .disabled(!game.fileFixInstalled || (draft.id == 3241660 && repoEnabled && !repoIDs.isValid) || (draft.id == 739630 && phasmEnabled && !PhasmophobiaPatch.validateAppID(phasmAppID.trimmingCharacters(in: .whitespacesAndNewlines))))
+                .disabled(!canConfigure || (draft.id == 3241660 && repoEnabled && !repoIDs.isValid) || (draft.id == 739630 && phasmEnabled && !PhasmophobiaPatch.validateAppID(phasmAppID.trimmingCharacters(in: .whitespacesAndNewlines))))
                 .keyboardShortcut(.defaultAction)
             }
-        }.padding(24).frame(width: 520, height: [739630, 3241660].contains(draft.id) ? 510 : 400)
+        }.padding(24).frame(width: 520, height: [739630, 3241660].contains(draft.id) ? 510 : draft.id == 892970 ? 440 : 400)
     }
 }
