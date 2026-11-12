@@ -255,3 +255,33 @@ Evidence: `evidence/valheim-native-final-launch.log`,
 `evidence/valheim-native-bepinex-final.log`,
 `evidence/valheim-native-crossplay-browser.png`,
 `evidence/valheim-native-crossplay-join.log`.
+
+### PEAK (3527290): EOS blocker diagnosis (2026-11-12)
+
+The installed PEAK fix cannot pass Epic Online Services authentication:
+
+- BepInEx ships only `BepInEx.Preloader.dll`; there is no core, plugin, or
+  winhttp/version loader.
+- `winmm.dll` loads `Custom.dll` into Mono and calls `OnlineFix.Main.Init`.
+  Decompiled, that patch only fakes a `CloudAPI` version/login response over
+  HTTP. It contains no EOS or Photon code.
+- `steam_api64.dll` and `EOSSDK-Win64-Shipping.dll` are stock; the package has
+  no EOS emulator or EOS SDK replacement.
+- The fix files are dated Oct 2025 while the game is PEAK 3.1.0 (Nov 2026), and
+  the INI hash does not match `PEAK.exe` or `Assembly-CSharp.dll`.
+- EOS rejects the Steam auth ticket: `ConnectExternalTokenValidationFailed`
+  (7000), then Photon `ReturnCode: 32755`. The ticket is issued for the fake
+  AppID 480, not PEAK 3527290.
+- `keepRealAppID` cannot change the pipe, and a real-3527290 launch is not
+  authorized for this account (PEAK is configured as a fix with macsteam depot
+  keys); the Wine Steam bridge hangs before Unity starts.
+
+To make PEAK online work we need a current PEAK-specific fix with an EOS
+emulator/ticket bypass for build 3.1.0, or a legitimately owned PEAK/Epic
+account. This cannot be produced from the installed package.
+
+During the investigation Steam.app's LSEnvironment lost `cloud_redirect.dylib`
+(the file is absent) and OnlineFix after a bootstrapper repair. It was
+re-registered with macsteam, notproton and the OnlineFix runtime dylib, and
+Steam is logged in. Use the Manager's install/repair before the next Steam
+restart so the pinned injection is restored correctly.
