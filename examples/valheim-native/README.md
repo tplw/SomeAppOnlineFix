@@ -14,9 +14,22 @@ PlayFabClientAPI.LoginWithCustomID(new LoginWithCustomIDRequest {
 Valheim's Mac build is Mono, so the same patch runs natively through BepInEx.
 No Wine and no patched `PlayFab.dll` are needed.
 
-## Build
+## Install or repair
 
-Install BepInEx 5.4.23.6 **macOS universal** into the game directory, then:
+Install BepInEx 5.4.23.6 **macOS universal** into the game directory first, then
+run:
+
+```sh
+./install.sh            # install or repair after a Steam update
+./install.sh --check    # verify without changing files
+```
+
+The script restores a known-bad `PlayFab.dll` from its backup, refreshes
+`Valheim.bin` when Steam has replaced the wrapper, rebuilds and installs the
+plugin, and re-signs the bundle. `VALHEIM_DIR` overrides the game path and
+`DOTNET` overrides the dotnet binary.
+
+## Build manually
 
 ```sh
 dotnet build -c Release

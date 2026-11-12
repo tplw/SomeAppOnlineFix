@@ -209,3 +209,22 @@ Known limits of the 480 routing:
 - The in-game Community tab queries the Steam server list as AppID 480, so it
   also shows other games' servers and passworded OnlineFix Valheim servers.
   A key icon means the server needs a password; ECA publishes `pw:12345`.
+
+### Steam-transport joins: keepRealAppID does not help (2026-11-12)
+
+Tested the two alternatives to the 480 route:
+
+- **No route (real 892970 pipe).** Steam initializes (`Steam initialized,
+  persona:HartzOn4`) and the menu loads, but PlayFab login never completes:
+  `Sending PlayFab login request` is logged with no success line. The auth
+  ticket belongs to an app the account does not own.
+- **`keepRealAppID`.** The setting only rewrites `IClientUtils` AppID replies.
+  The pipe is still changed to 480 by `CSteamEngine::SetAppIDForCurrentPipe`,
+  and `of_networking` reports `matchmaking uses 480`, so Steam P2P still
+  identifies as 480.
+
+The requirements conflict: a working PlayFab login needs the 480 pipe, and real
+Steam networking needs the 892970 pipe. Fixing this means spoofing ownership and
+issuing valid tickets on the real AppID, not remapping the AppID. That is a
+separate Steam-client project, so Steam-transport servers remain unsupported;
+PlayFab/crossplay servers work end to end.
