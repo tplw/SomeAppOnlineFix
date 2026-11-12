@@ -155,3 +155,57 @@ EOS rejects the Steam token and Photon rejects the session. Copying the generic
 `EmulateTicket=true` did not change it, so PEAK needs its own OnlineFix package
 (EOS/Photon app id and ticket patch). Manager's Custom Fix can install that
 package when it is available; the Steam-side 480 routing is already proven.
+
+## Valheim (892970): native macOS online port (2026-11-11)
+
+The Windows fix ships a BepInEx/Harmony plugin whose multiplayer patch is
+entirely managed:
+
+```csharp
+// Custom.dll, class 웈
+PlayFabClientAPI.LoginWithCustomID(new LoginWithCustomIDRequest {
+    CreateAccount = true,
+    CustomId = SteamUser.GetSteamID().ToString()
+}, resultCallback, errorCallback, null, null);
+```
+
+It prefixes `PlayFabClientAPI.LoginWithSteam`, so no native Steam code changes
+are needed. Valheim's Mac build is Mono, so the port is a native BepInEx plugin:
+
+- BepInEx 5.4.23.6 macOS universal in `Valheim/BepInEx`.
+- `BepInEx/plugins/ValheimOnlineFix.dll` built against the game's own
+  `PlayFab.dll`, `com.rlabrecque.steamworks.net.dll` and `UnityEngine` modules.
+- `valheim.app/Contents/MacOS/Valheim` is a wrapper that execs the original
+  `Valheim.bin` through `run_bepinex.sh`, so a normal Steam launch loads it.
+
+Live result (native arm64, Steam 1792618285, OnlineFix 892970 -> 480):
+
+```
+[Valheim OnlineFix] Valheim OnlineFix: LoginWithSteam -> LoginWithCustomID
+Sending PlayFab login request (attempt 1)
+Logged in PlayFab user via Steam auth session ticket
+```
+
+Joined a public server and spawned in-world:
+
+```
+Determined backend of dedicated server to be PlayFab
+Connecting to server with PlayFab-backend 59A0BCCCE94F5D9
+Joining server 'ECA Public Server (pw:12345)' at PlayFab network ...
+PlayFab socket connected to remote player 59A0BCCCE94F5D9
+Character ID for player ([asdad, 0:0], [HartzOn4, Steam_76561198687805301, ...], HartzOn4)
+Starting music morning
+```
+
+Evidence: `evidence/valheim-native-player-join.log`,
+`evidence/valheim-native-inworld.png`, `evidence/valheim-native-server-list.png`.
+
+Known limits of the 480 routing:
+
+- PlayFab/crossplay servers work end to end.
+- Direct Steam-transport servers time out (`5003 Timed out attempting to
+  connect`). The fake AppID 480 does not match a real server's Steam identity,
+  so use crossplay servers with this routing.
+- The in-game Community tab queries the Steam server list as AppID 480, so it
+  also shows other games' servers and passworded OnlineFix Valheim servers.
+  A key icon means the server needs a password; ECA publishes `pw:12345`.
