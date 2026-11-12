@@ -122,3 +122,36 @@ A Windows lobby therefore needs NotProton 1.2.5's runner installer to add the
 **CrossOver Preview 11-11-26 X86/Rosetta** package (or the X86 DMG), then the
 `notproton-preview-41303` tool. The 1.2.5 app is installed; its config and prefixes
 are preserved. OnlineFix routing itself is already proven.
+
+## PEAK (3527290) live result
+
+PEAK is installed and runs under NotProton/FEX. OnlineFix routes it correctly:
+
+```
+launch game=3527290 mode=early compat=1
+session active game=3527290 pipe=480
+networking active: matchmaking uses 480
+stats callback: 480 -> 3527290
+```
+
+Steam registers the process as AppID 480. PEAK reaches its online stack:
+
+```
+Steam Lobby Handler initialized
+Steam auth ticket received, adding it to PhotonNetwork
+```
+
+It then fails at the game-specific backend, not at Steam routing:
+
+```
+LoginAsync result: ConnectExternalTokenValidationFailed
+Failed to authenticate: ConnectExternalTokenValidationFailed
+OperationResponse 230: ReturnCode: 32755 (Failed(2): error response from Steam)
+Opening disconnected modal
+```
+
+EOS rejects the Steam token and Photon rejects the session. Copying the generic
+`OnlineFix64.dll`/`winmm.dll` and an INI with `PhotonIntegration=true`,
+`EmulateTicket=true` did not change it, so PEAK needs its own OnlineFix package
+(EOS/Photon app id and ticket patch). Manager's Custom Fix can install that
+package when it is available; the Steam-side 480 routing is already proven.
