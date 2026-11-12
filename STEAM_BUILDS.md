@@ -80,3 +80,25 @@ Use Valve's old packages, not a hand-edited copy:
 
 A partial merge fails verification and makes Steam exit; do not skip the
 manifest check.
+
+## Windows gameplay blocker (test machine, 2026-11-11)
+
+Routing to AppID 480 is proven for a native game (Terraria) and a Windows game
+(Casualties Unknown via NotProton). A completed Windows lobby is still blocked by
+the runtime, not by OnlineFix:
+
+- Casualties Unknown (Unity/D3D11) crashes with the D3DMetal backend and hangs at
+  `Direct3D: detected that using refresh rate causes time drift` with DXMT,
+  wined3d and DXVK (5+ minutes at 40-50% CPU, no window, no log progress).
+- Windowed launch options (`-screen-fullscreen 0 -screen-width 1280
+  -screen-height 720`) do not change it.
+- The restored old Steam UI renders only the splash; install dialogs are
+  invisible, so a different Windows title cannot be installed through the client.
+- SteamCMD anonymous downloads the content depots for Alien Swarm: Reactive Drop
+  but not the client executable; app 630 returns `No subscription`.
+- A custom Rosetta compatibility tool is removed by NotProton at startup and its
+  mapping is reset to the FEX tool.
+
+Resolving this needs a working Rosetta/preview runner from NotProton or a Windows
+title known to run under the current FEX renderer. It is not an OnlineFix code
+path.
