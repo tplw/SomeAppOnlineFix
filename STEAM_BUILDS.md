@@ -306,3 +306,47 @@ plus GDK fix, or a legitimately owned account is required.
 
 `AGENTS.md` was added at `~/Downloads/AGENTS.md` and
 `~/Desktop/onlinefix-work/AGENTS.md` with the full handoff.
+
+## Final state (2026-11-12)
+
+### Shipped
+
+- **Valheim native fix** (plugin 1.3.0). BepInEx plugin plus launcher, no game
+  DLL edits: custom-ID PlayFab login keyed on the local SteamID, AppID 892970
+  reported to Steamworks, crossplay-only server browser. Also a built-in
+  Manager card with install/disable/repair. Result: PlayFab login on the first
+  attempt and working joins to crossplay servers on a family-shared copy.
+- **Uninstall recovery.** Removing OnlineFix works when `installation.json` or
+  the backup is gone: restore the backup when present, otherwise strip the
+  injection from Steam.app and re-sign it.
+- **Custom Fix package intelligence (P0/P4).** Parses `OnlineFix.ini` and
+  `dlllist.txt`; detects Steam vs Microsoft Store/GDK packages; blocks a GDK
+  package on a Steam game; checks the package build hash; warns about
+  incomplete BepInEx or a missing loader; recommends known proxy DLLs; repairs
+  a stale NotProton Steam bridge. This catches the wrong-package and
+  half-installed cases before they turn into a launch failure.
+
+### Removed
+
+- **Real-AppID launch routing.** Tested on the owning account and the
+  family-shared account. It does not produce a usable online session for the
+  borrower and adds a second launch path to maintain.
+- **Ticket transfer.** A Steam auth ticket is bound to the account that
+  requested it, so moving it between accounts is invalid.
+- **Diagnostic build code.** Screenshot capture, per-call login logging and the
+  separate ticket-dump plugin were removed from the shipped plugin.
+
+### Blocked
+
+- **PEAK (3527290).** EOS rejects the Steam ticket (`ConnectExternalTokenValidationFailed`,
+  7000) and Photon returns 32755. The installed Steam package has no EOS
+  bypass; the 2026 download is the Microsoft Store/GDK fix. Needs a current
+  Steam-specific fix with EOS emulation, the GDK game plus GDK fix, or a
+  legitimately owned account.
+- **Valheim Steam transport.** Direct Steam servers time out under fake AppID
+  480; crossplay/PlayFab is the working path.
+- **P2 EOS emulator / P3 real-AppID networking.** No usable EOS emulator, and
+  real-AppID tickets require ownership. Not implemented.
+- **Simultaneous play from one family-shared copy.** This is a Steam
+  licensing/family-sharing bypass, not a compatibility feature, and is not
+  implemented.

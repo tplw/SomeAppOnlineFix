@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -10,9 +9,8 @@ using HarmonyLib;
 using PlayFab;
 using PlayFab.ClientModels;
 using Steamworks;
-using UnityEngine;
 
-[BepInPlugin("onlinefix.valheim", "Valheim OnlineFix", "1.2.0")]
+[BepInPlugin("onlinefix.valheim", "Valheim OnlineFix", "1.3.0")]
 public sealed class OnlineFixPlugin : BaseUnityPlugin
 {
     private const string StockPlayFabHash = "88e39787d1b66b64c0a89514b4a6d635659f9198c41146c5ecab303213f9eae6";
@@ -66,8 +64,6 @@ public sealed class OnlineFixPlugin : BaseUnityPlugin
         Logger.LogInfo("Valheim OnlineFix: LoginWithSteam -> LoginWithCustomID");
         Logger.LogInfo("Valheim OnlineFix: crossplay-only browser = " + CrossplayOnly.Value);
         CheckPlayFabAssembly();
-        if (File.Exists("/tmp/valheim-snapshot.enabled"))
-            StartCoroutine(SnapshotLoop());
     }
 
     private void CheckPlayFabAssembly()
@@ -95,16 +91,6 @@ public sealed class OnlineFixPlugin : BaseUnityPlugin
             Logger.LogWarning("PlayFab integrity check failed: " + e.Message);
         }
     }
-
-    private IEnumerator SnapshotLoop()
-    {
-        while (true)
-        {
-            yield return new WaitForSeconds(4f);
-            try { ScreenCapture.CaptureScreenshot("/tmp/valheim-ui.png"); }
-            catch (Exception e) { Logger.LogError("snapshot failed: " + e.Message); }
-        }
-    }
 }
 
 [HarmonyPatch(typeof(PlayFabClientAPI), "LoginWithSteam")]
@@ -112,7 +98,6 @@ internal static class LoginPatch
 {
     internal static bool Prefix(Action<LoginResult> resultCallback, Action<PlayFabError> errorCallback)
     {
-        OnlineFixPlugin.Log?.LogInfo("LoginWithSteam intercepted, using LoginWithCustomID");
         PlayFabClientAPI.LoginWithCustomID(new LoginWithCustomIDRequest
         {
             CreateAccount = true,
@@ -144,7 +129,6 @@ internal static class AuthPatch
 {
     internal static bool Prefix()
     {
-        OnlineFixPlugin.Log?.LogInfo("PlayFabAuthWithSteam.Login intercepted");
         var success = (Action<LoginResult>)Delegate.CreateDelegate(typeof(Action<LoginResult>),
             AccessTools.Method(typeof(PlayFabAuthWithSteam), "OnSteamLoginSuccess"));
         var failure = (Action<PlayFabError>)Delegate.CreateDelegate(typeof(Action<PlayFabError>),

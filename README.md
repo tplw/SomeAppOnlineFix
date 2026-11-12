@@ -20,6 +20,44 @@ Experimental OnlineFix implementation for macOS on Apple Silicon.
 - Steam (compatible build)
 - Internet access for the first build (Dobby)
 
+## Current capabilities (2026-11-12)
+
+**Built-in fixes**
+- **Terraria** — native server environment fix.
+- **PICO PARK 2** — native Photon patch.
+- **Phasmophobia** — IL2CPP/Photon patch.
+- **R.E.P.O.** — Mono/Photon IDs.
+- **Valheim** — native macOS BepInEx fix: PlayFab login keyed on the local
+  SteamID, AppID 892970 reported to Steamworks, and a crossplay-only server
+  browser. The OnlineFix Steam pipe still uses 480. Game assemblies stay stock;
+  it requires BepInEx 5.4.23.6 and `libdoorstop.dylib`.
+
+**Custom Fix (Windows games under NotProton)**
+- Installs OnlineFix packages with backup and restore.
+- Reads `OnlineFix.ini` and `dlllist.txt`, detects Steam vs Microsoft Store/GDK
+  packages, blocks GDK fixes on Steam games, checks the SHA-512 build hash, and
+  warns about incomplete BepInEx or missing loader DLLs.
+- Recommends known native proxy DLLs (winmm/version/winhttp/etc.).
+- Repairs a stale NotProton Steam bridge after a Steam restart.
+- It is **not** a universal online fix: the game-specific OnlineFix package
+  still provides the online patch.
+
+**Uninstall**
+- Restores Steam from the backup when present; if `installation.json` and the
+  backup are missing, it strips the OnlineFix injection and re-signs Steam.app.
+
+## Known limits
+
+- **PEAK/EOS/Photon:** server-side ticket validation. PEAK remains blocked;
+  the installed package has no EOS bypass.
+- **Valheim:** PlayFab/crossplay servers work; direct Steam-transport servers
+  time out under the 480 route.
+- **Family sharing:** gives play access but no Steam auth ticket. Valheim
+  crossplay can work via the custom-ID login; ticket-backed games do not.
+  Never transplant a ticket between accounts.
+- **Not shipped:** launching through Steam with the real AppID and a real
+  ticket, ticket transfer, EOS emulator, cloud redirect, Lua hot reload.
+
 ## Build
 
 ```bash

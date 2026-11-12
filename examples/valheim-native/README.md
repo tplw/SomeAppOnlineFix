@@ -36,7 +36,9 @@ restored from its backup, and the plugin logs a warning if the hash is wrong.
 
 ## Install or repair
 
-Install BepInEx 5.4.23.6 **macOS universal** into the game directory, then:
+The Manager installs the same plugin from
+`OnlineFixManager/Resources/ValheimOnlineFix.dll` (plugin 1.3.0). For a manual
+install, add BepInEx 5.4.23.6 **macOS universal** to the game directory, then:
 
 ```sh
 ./install.sh            # install or repair after a Steam update
@@ -60,7 +62,8 @@ patched SteamManager.LoadAPPID
 patched SteamAPI.RestartAppIfNecessary
 patched PlayFabAuthWithSteam.Login
 patched MultiBackendMatchmaking constructor
-PlayFabAuthWithSteam.Login intercepted
+Valheim OnlineFix: LoginWithSteam -> LoginWithCustomID
+Valheim OnlineFix: crossplay-only browser = True
 Server browser: Steam-480 list hidden, showing PlayFab/crossplay only
 ```
 
@@ -77,6 +80,13 @@ The Community tab lists only PlayFab/crossplay Valheim servers, so other
 OnlineFix games and fake-AppID servers no longer appear. Set
 `CrossplayOnly = false` in `BepInEx/config/onlinefix.valheim.cfg` to restore the
 merged Steam list.
+
+## Plugin 1.3.0
+
+The shipped plugin only logs which patches were applied, the server-browser
+mode and a PlayFab hash check. Diagnostic code used during development
+(screenshot capture, per-call login logging, a separate ticket-dump plugin) is
+not part of the release.
 
 ## Limits under fake AppID 480
 

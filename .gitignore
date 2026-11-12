@@ -5,3 +5,5 @@
 /docs/
 /OnlineFixManager/Models/PhotonServers.local.swift
 __pycache__/
+/examples/valheim-native/bin/
+/examples/valheim-native/obj/

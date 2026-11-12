@@ -1,21 +1,24 @@
+# Changelog
+
 ## Unreleased
 
-- Custom Fix package intelligence: parses the full `OnlineFix.ini` and
-  `dlllist.txt`, detects Steam vs Microsoft Store/GDK packages, checks the
-  SHA-512 build hash, warns about incomplete BepInEx/loader files, and blocks
-  GDK fixes on Steam games.
-- Known Windows proxy DLLs (winmm/version/winhttp/etc.) are recommended even
-  when Wine has no builtin of the same name.
-- Added NotProton Steam bridge repair for games that hang after a Steam restart.
+### Valheim
+- Built-in native fix: BepInEx plugin and launcher; PlayFab login as the local
+  SteamID, real AppID 892970, crossplay-only server browser. No game DLL edits.
+- Installer/repair script and Manager install/disable lifecycle.
+- Uninstall restores the stock binary.
 
-- Valheim is a built-in fix in Available fixes. It installs the native BepInEx
-  plugin and launcher, requires BepInEx 5.4.23.6 plus libdoorstop.dylib, and
-  restores the stock binary on disable/uninstall.
-- Uninstall now recovers when `installation.json` or the backup is missing:
-  it restores the backup if present, otherwise strips the OnlineFix injection
-  from Steam.app and re-signs it.
+### Manager
+- Uninstall OnlineFix works when `installation.json` or the backup is missing:
+  restore the backup if present, otherwise strip the OnlineFix injection and
+  re-sign Steam.app.
+- Added NotProton Steam bridge repair.
 
-# Changelog
+### Custom Fix
+- Parses the full `OnlineFix.ini` and `dlllist.txt`, blocks Microsoft Store/GDK
+  packages on Steam games, checks SHA-512 build hashes, and warns about
+  incomplete BepInEx or missing loader DLLs.
+- Recommends known native proxy DLLs (winmm/version/winhttp/etc.).
 
 ## v2.1.0
 
