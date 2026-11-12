@@ -102,3 +102,23 @@ the runtime, not by OnlineFix:
 Resolving this needs a working Rosetta/preview runner from NotProton or a Windows
 title known to run under the current FEX renderer. It is not an OnlineFix code
 path.
+
+## Rosetta runner attempt (2026-11-11)
+
+NotProton's supported Rosetta tool is `notproton-preview-41069`, which expects
+CrossOver **2026 10 06-X86**. The installed `/Applications/CrossOver Preview.app`
+is the ARM64 package:
+
+- its `x86_64-windows/ntdll.dll` hashes `1b02dcf6...`, the **FEX clean** hash in
+  `SupportedRunner.swift`, not the Rosetta clean `5b388fd4...`;
+- the Rosetta detour (`detour2-41069.bin`) cannot be applied because the expected
+  cave at `0x815e0` is populated data in that ntdll;
+- reusing the FEX-patched ntdll with the Rosetta wine crashes immediately
+  (`wine-2026-11-11-213246.ips`);
+- a custom tool is deleted by NotProton at startup; the supported tool name
+  survives but NotProton's launch hook still hands the game to the FEX tool.
+
+A Windows lobby therefore needs NotProton 1.2.5's runner installer to add the
+**CrossOver Preview 11-11-26 X86/Rosetta** package (or the X86 DMG), then the
+`notproton-preview-41303` tool. The 1.2.5 app is installed; its config and prefixes
+are preserved. OnlineFix routing itself is already proven.
