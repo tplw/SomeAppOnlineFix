@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Custom Fix package intelligence: parses the full `OnlineFix.ini` and
+  `dlllist.txt`, detects Steam vs Microsoft Store/GDK packages, checks the
+  SHA-512 build hash, warns about incomplete BepInEx/loader files, and blocks
+  GDK fixes on Steam games.
+- Known Windows proxy DLLs (winmm/version/winhttp/etc.) are recommended even
+  when Wine has no builtin of the same name.
+- Added NotProton Steam bridge repair for games that hang after a Steam restart.
+
 - Valheim is a built-in fix in Available fixes. It installs the native BepInEx
   plugin and launcher, requires BepInEx 5.4.23.6 plus libdoorstop.dylib, and
   restores the stock binary on disable/uninstall.

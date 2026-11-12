@@ -105,6 +105,43 @@ enum CustomFixChecks {
             try CustomFix.restore(directory: game)
             print("Local RAR passed: \(rar.entries.count) files, native DLLs: \(rar.dlls.joined(separator: ", "))")
         }
+        // Package intelligence: GDK vs Steam, hash mismatch and incomplete BepInEx.
+        let analysisGame = temporary.appendingPathComponent("analysis-game")
+        try fm.createDirectory(at: analysisGame.appendingPathComponent("Game_Data/Managed"), withIntermediateDirectories: true)
+        try Data("MZ fixture".utf8).write(to: analysisGame.appendingPathComponent("Game.exe"))
+        try Data("assembly".utf8).write(to: analysisGame.appendingPathComponent("Game_Data/Managed/Assembly-CSharp.dll"))
+        func analysisPackage(_ iniText: String?, dllList: [String] = [],
+                             layout: CustomFix.BepInExLayout = CustomFix.BepInExLayout()) throws -> CustomFix.Package {
+            let content = temporary.appendingPathComponent("analysis-content-\(UUID().uuidString)")
+            try fm.createDirectory(at: content, withIntermediateDirectories: true)
+            let ini: CustomFix.OnlineFixINI?
+            if let iniText { ini = try CustomFix.parseINI(iniText) } else { ini = nil }
+            return CustomFix.Package(temporary: content, content: content, entries: [],
+                                     declaredAppID: ini?.realAppID, ini: ini, dllList: dllList, bepInEx: layout)
+        }
+        let gdkPackage = try analysisPackage("[Main]\nIsPackaged=false\nProductId=9NMKF7LPVX44\n")
+        let gdkAnalysis = CustomFix.analyze(gdkPackage, gameID: 3527290, in: analysisGame)
+        precondition(gdkAnalysis.kind == .gdk && gdkAnalysis.isBlocked)
+        let steamPackage = try analysisPackage("[Main]\nRealAppId=892970\nFakeAppId=480\n")
+        let steamAnalysis = CustomFix.analyze(steamPackage, gameID: 892970, in: analysisGame)
+        precondition(steamAnalysis.kind == .steam && !steamAnalysis.isBlocked)
+        let badHash = String(repeating: "a", count: 128)
+        let hashPackage = try analysisPackage("[Main]\nRealAppId=892970\n[Hashes]\n0=\(badHash)\n")
+        precondition(CustomFix.analyze(hashPackage, gameID: 892970, in: analysisGame).issues.contains { $0.message.contains("build hash") })
+        var incomplete = CustomFix.BepInExLayout()
+        incomplete.present = true
+        incomplete.hasPreloader = true
+        let bepPackage = try analysisPackage("[Main]\nRealAppId=892970\n", layout: incomplete)
+        precondition(CustomFix.analyze(bepPackage, gameID: 892970, in: analysisGame).issues.contains { $0.message.contains("BepInEx is incomplete") })
+
+        // NotProton bridge repair moves a stale staged bridge aside for re-staging.
+        let bridge = temporary.appendingPathComponent("bridge/Steam")
+        try fm.createDirectory(at: bridge, withIntermediateDirectories: true)
+        try Data("steam".utf8).write(to: bridge.appendingPathComponent("steam.exe"))
+        let bridgeBackup = try NotProtonBridge.repair(bridge: bridge)
+        precondition(!fm.fileExists(atPath: bridge.path))
+        precondition(fm.fileExists(atPath: bridgeBackup.appendingPathComponent("steam.exe").path))
+
         print("Custom Fix checks passed: encrypted ZIP password retry, path/link guards, bridge exclusions, native options, install, backup validation and resumable restore.")
     }
 }

@@ -22,11 +22,56 @@ enum CustomFix {
         let size: UInt64
     }
 
+    struct OnlineFixINI: Sendable, Equatable {
+        var realAppID: UInt32?
+        var fakeAppID: UInt32?
+        var isPackaged: Bool?
+        var productID: String?
+        var hashes: [String] = []
+        var photonIntegration: Bool?
+        var emulateTicket: Bool?
+
+        var isGDK: Bool { isPackaged == false || productID != nil }
+    }
+
+    struct BepInExLayout: Sendable, Equatable {
+        var present = false
+        var hasCore = false
+        var hasPreloader = false
+        var proxy: String?
+        var pluginCount = 0
+    }
+
+    enum PackageKind: String, Sendable, Equatable {
+        case steam = "Steam"
+        case gdk = "Microsoft Store / GDK"
+        case unknown = "Unknown"
+    }
+
+    struct PackageIssue: Sendable, Equatable, Identifiable {
+        enum Severity: String, Sendable, Equatable {
+            case warning
+            case error
+        }
+        let severity: Severity
+        let message: String
+        var id: String { "\(severity.rawValue):\(message)" }
+    }
+
+    struct PackageAnalysis: Sendable, Equatable {
+        let kind: PackageKind
+        let issues: [PackageIssue]
+        var isBlocked: Bool { issues.contains { $0.severity == .error } }
+    }
+
     struct Package: Sendable {
         let temporary: URL
         let content: URL
         let entries: [Entry]
         let declaredAppID: UInt32?
+        let ini: OnlineFixINI?
+        let dllList: [String]
+        let bepInEx: BepInExLayout
         var dlls: [String] {
             Array(Set(entries.compactMap { entry -> String? in
                 let url = URL(fileURLWithPath: entry.path)
@@ -54,7 +99,8 @@ enum CustomFix {
                     }
                 }
             }
-            return dlls.filter { builtins.contains($0) }
+            let knownProxies: Set<String> = ["winmm", "version", "winhttp", "wininet", "dinput8", "dxgi", "d3d11", "xinput1_4", "xinput9_1_0"]
+            return dlls.filter { builtins.contains($0) || knownProxies.contains($0) }
         }
     }
 
@@ -187,30 +233,182 @@ enum CustomFix {
                 let attributes = try fm.attributesOfItem(atPath: content.appendingPathComponent(entry.path).path)
                 guard (attributes[.size] as? NSNumber)?.uint64Value == entry.size else { throw ArchiveError.invalid("Extracted file size does not match the listing.") }
             }
-            var declaredAppID: UInt32?
-            for entry in entries where URL(fileURLWithPath: entry.path).lastPathComponent.lowercased() == "onlinefix.ini" {
+            var ini: OnlineFixINI?
+            if let entry = entries.first(where: { URL(fileURLWithPath: $0.path).lastPathComponent.lowercased() == "onlinefix.ini" }) {
                 guard entry.size <= 65536 else { throw ArchiveError.invalid("OnlineFix.ini is too large to inspect.") }
                 let data = try Data(contentsOf: content.appendingPathComponent(entry.path))
                 guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1252) else {
                     throw ArchiveError.invalid("OnlineFix.ini uses an unsupported text encoding.")
                 }
-                for line in text.components(separatedBy: .newlines) {
-                    let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                    if parts.count == 2 && parts[0].lowercased() == "realappid" {
-                        let value = parts[1].components(separatedBy: CharacterSet(charactersIn: ";#")).first!
-                            .trimmingCharacters(in: .whitespaces)
-                        guard let id = UInt32(value), ManagedGame.validID(id), declaredAppID == nil || declaredAppID == id else {
-                            throw ArchiveError.invalid("The package has an invalid or conflicting RealAppId.")
-                        }
-                        declaredAppID = id
-                    }
-                }
+                ini = try parseINI(text)
             }
-            return Package(temporary: temporary, content: content, entries: entries, declaredAppID: declaredAppID)
+            let dllList = try parseDLLList(entries: entries, content: content)
+            return Package(temporary: temporary, content: content, entries: entries,
+                           declaredAppID: ini?.realAppID, ini: ini, dllList: dllList,
+                           bepInEx: bepInExLayout(entries))
         } catch {
             try? fm.removeItem(at: temporary)
             throw error
         }
+    }
+
+    static func parseINI(_ text: String) throws -> OnlineFixINI {
+        var ini = OnlineFixINI()
+        var section = ""
+        var seenReal = false
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix(";"), !line.hasPrefix("#") else { continue }
+            if line.hasPrefix("["), line.hasSuffix("]") {
+                section = String(line.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces).lowercased()
+                continue
+            }
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count == 2 else { continue }
+            let key = parts[0].lowercased()
+            let value = parts[1].components(separatedBy: CharacterSet(charactersIn: ";#")).first?
+                .trimmingCharacters(in: .whitespaces) ?? ""
+            switch key {
+            case "realappid":
+                guard let id = UInt32(value), ManagedGame.validID(id) else {
+                    throw ArchiveError.invalid("The package has an invalid RealAppId.")
+                }
+                if seenReal && ini.realAppID != id {
+                    throw ArchiveError.invalid("The package has conflicting RealAppId values.")
+                }
+                ini.realAppID = id
+                seenReal = true
+            case "fakeappid":
+                if let id = UInt32(value), ManagedGame.validID(id) { ini.fakeAppID = id }
+            case "ispackaged":
+                if value.lowercased() == "true" { ini.isPackaged = true }
+                else if value.lowercased() == "false" { ini.isPackaged = false }
+            case "productid":
+                if !value.isEmpty { ini.productID = value }
+            case "photonintegration":
+                ini.photonIntegration = value.lowercased() == "true"
+            case "emulateticket":
+                ini.emulateTicket = value.lowercased() == "true"
+            default:
+                if section == "hashes", let index = Int(key), index >= 0, index < 16 {
+                    let hash = value.lowercased()
+                    if hash.range(of: #"^[0-9a-f]{128}$"#, options: .regularExpression) != nil {
+                        ini.hashes.append(hash)
+                    }
+                }
+            }
+        }
+        return ini
+    }
+
+    private static func parseDLLList(entries: [Entry], content: URL) throws -> [String] {
+        guard let entry = entries.first(where: { URL(fileURLWithPath: $0.path).lastPathComponent.lowercased() == "dlllist.txt" }) else {
+            return []
+        }
+        guard entry.size <= 65536 else { throw ArchiveError.invalid("dlllist.txt is too large to inspect.") }
+        let data = try Data(contentsOf: content.appendingPathComponent(entry.path))
+        guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1252) else {
+            return []
+        }
+        return Array(text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "\\", with: "/") }
+            .filter { !$0.isEmpty && !$0.hasPrefix(";") && !$0.hasPrefix("#") }
+            .prefix(200))
+    }
+
+    private static func bepInExLayout(_ entries: [Entry]) -> BepInExLayout {
+        var layout = BepInExLayout()
+        for entry in entries {
+            let path = entry.path.replacingOccurrences(of: "\\", with: "/").lowercased()
+            if path.hasPrefix("bepinex/") { layout.present = true }
+            if path == "bepinex/core/bepinex.dll" { layout.hasCore = true }
+            if path == "bepinex/core/bepinex.preloader.dll" { layout.hasPreloader = true }
+            if path == "winhttp.dll" || path == "version.dll" { layout.proxy = path }
+            if path.hasPrefix("bepinex/plugins/") && path.hasSuffix(".dll") { layout.pluginCount += 1 }
+        }
+        return layout
+    }
+
+    static func analyze(_ package: Package, gameID: UInt32?, in directory: URL?) -> PackageAnalysis {
+        var issues: [PackageIssue] = []
+        let kind: PackageKind
+        if let ini = package.ini {
+            if ini.isGDK && ini.realAppID == nil {
+                kind = .gdk
+                issues.append(PackageIssue(severity: .error,
+                    message: "This is a Microsoft Store/GDK fix (ProductId/IsPackaged), not a Steam fix. Use the Steam version of the fix."))
+            } else if ini.realAppID != nil {
+                kind = .steam
+            } else {
+                kind = .unknown
+                issues.append(PackageIssue(severity: .warning,
+                    message: "OnlineFix.ini has no RealAppId or ProductId; the package platform cannot be verified."))
+            }
+        } else {
+            kind = .unknown
+            issues.append(PackageIssue(severity: .warning,
+                message: "No OnlineFix.ini was found; verify this is the correct package for the game build."))
+        }
+        if let ini = package.ini, !ini.hashes.isEmpty {
+            if let directory, let hashes = try? gameBuildHashes(directory), !hashes.isEmpty {
+                if !hashes.contains(where: { ini.hashes.contains($0) }) {
+                    issues.append(PackageIssue(severity: .warning,
+                        message: "The package's build hash does not match the installed game. The fix may be for another game version."))
+                }
+            } else {
+                issues.append(PackageIssue(severity: .warning,
+                    message: "Cannot verify the package build hash; install the game files or launch it once."))
+            }
+        }
+        if package.bepInEx.present {
+            if !package.bepInEx.hasCore {
+                issues.append(PackageIssue(severity: .warning,
+                    message: "BepInEx is incomplete (only the preloader was found). The plugin may not load; install a full BepInEx package."))
+            }
+            if package.bepInEx.hasCore && package.bepInEx.proxy == nil && package.bepInEx.pluginCount == 0 {
+                issues.append(PackageIssue(severity: .warning,
+                    message: "BepInEx has no proxy DLL or plugins; the fix may not load."))
+            }
+        }
+        let lowerList = package.dllList.map { $0.lowercased() }
+        for required in ["custom.net", "onlinefix64.dll"] where lowerList.contains(required) {
+            let filename = required == "custom.net" ? "custom.dll" : "onlinefix64.dll"
+            if !package.entries.contains(where: { URL(fileURLWithPath: $0.path).lastPathComponent.lowercased() == filename }) {
+                issues.append(PackageIssue(severity: .warning,
+                    message: "dlllist.txt references \(required), but \(filename) is missing from the package."))
+            }
+        }
+        if package.dlls.isEmpty && package.bepInEx.proxy == nil {
+            issues.append(PackageIssue(severity: .warning,
+                message: "No native DLL proxy or BepInEx proxy was found; this package may rely on Steam-side OnlineFix."))
+        }
+        return PackageAnalysis(kind: kind, issues: issues)
+    }
+
+    static func hash512(_ url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hash = SHA512()
+        while let data = try handle.read(upToCount: 65536), !data.isEmpty { hash.update(data: data) }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func gameBuildHashes(_ directory: URL) throws -> [String] {
+        var urls: [URL] = []
+        if let executables = try? SteamLibrary.windowsExecutables(in: directory),
+           let executable = executables.first(where: { !$0.lowercased().contains("crashhandler") }) {
+            urls.append(directory.appendingPathComponent(executable))
+        }
+        if let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey],
+                                                           options: [.skipsHiddenFiles]) {
+            while let url = enumerator.nextObject() as? URL {
+                if url.lastPathComponent.caseInsensitiveCompare("Assembly-CSharp.dll") == .orderedSame {
+                    urls.append(url)
+                    break
+                }
+            }
+        }
+        return try urls.map { try hash512($0) }
     }
 
     static func hash(_ url: URL) throws -> String {

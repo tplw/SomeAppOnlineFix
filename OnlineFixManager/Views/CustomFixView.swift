@@ -59,13 +59,20 @@ struct CustomFixView: View {
         package?.declaredAppID == nil || package?.declaredAppID == validAppID
     }
 
+    private var packageAnalysis: CustomFix.PackageAnalysis? {
+        guard let package else { return nil }
+        return CustomFix.analyze(package, gameID: validAppID, in: destination)
+    }
+
     private var options: String {
         CustomFix.launchOptions(dlls: receipt?.nativeDLLs ?? Array(nativeDLLs))
     }
 
     private var canContinue: Bool {
         guard validAppID != nil, destination != nil, !executables.isEmpty, !locating else { return false }
-        return step == 0 || (package != nil && packageMatchesGame)
+        if step == 0 { return true }
+        guard package != nil, packageMatchesGame else { return false }
+        return packageAnalysis?.isBlocked != true
     }
 
     var body: some View {
@@ -209,6 +216,15 @@ struct CustomFixView: View {
                             Text("This package declares AppID \(String(package.declaredAppID!)), which does not match the selected game. Choose the correct fix.")
                                 .foregroundStyle(.red)
                         }
+                        if let analysis = packageAnalysis {
+                            Label("Package: \(analysis.kind.rawValue)", systemImage: analysis.kind == .steam ? "checkmark.seal" : "exclamationmark.triangle")
+                                .font(.callout)
+                            ForEach(analysis.issues) { issue in
+                                Label(issue.message, systemImage: issue.severity == .error ? "xmark.octagon" : "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(issue.severity == .error ? Color.red : Color.orange)
+                            }
+                        }
                         Text("\(package.entries.count) files ready. DLL settings will be configured automatically.")
                             .font(.callout)
                         DisclosureGroup("Advanced · files and DLL settings") {
@@ -247,6 +263,13 @@ struct CustomFixView: View {
                         Text(archive?.lastPathComponent ?? "Custom fix")
                         Text("\(package.entries.count) files · Backup and DLL setup included")
                             .font(.callout).foregroundStyle(.secondary)
+                        if let analysis = packageAnalysis, !analysis.issues.isEmpty {
+                            ForEach(analysis.issues) { issue in
+                                Label(issue.message, systemImage: issue.severity == .error ? "xmark.octagon" : "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(issue.severity == .error ? Color.red : Color.orange)
+                            }
+                        }
                         if let destination { Text(destination.path).font(.caption).textSelection(.enabled) }
                     }
                 }
@@ -266,6 +289,10 @@ struct CustomFixView: View {
                         }
                         Button(dllSettingsApplied ? "Repair DLL Settings & Overlay" : "Apply DLL Settings to NotProton") { applyDLLSettings() }
                             .disabled(receipt == nil || selectedExecutable.isEmpty || (receipt?.nativeDLLs ?? Array(nativeDLLs)).isEmpty)
+                        Button("Repair NotProton Steam Bridge") { repairBridge() }
+                            .disabled(directory == nil)
+                        Text("Use this if the game hangs before loading after a Steam restart. The next launch re-stages a fresh bridge.")
+                            .font(.caption).foregroundStyle(.secondary)
                         if !dllSettingsApplied {
                             Text("Install the files first. If no DLLs are recommended, the package may rely on its own loader; select additional overrides only when required.")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -451,7 +478,8 @@ struct CustomFixView: View {
     }
 
     private func install() {
-        guard let package, let directory = destination, let chosenGame, validAppID != nil, packageMatchesGame else { return }
+        guard let package, let directory = destination, let chosenGame, validAppID != nil, packageMatchesGame,
+              packageAnalysis?.isBlocked != true else { return }
         let dlls = Array(nativeDLLs)
         let executable = directory == self.directory ? selectedExecutable : URL(fileURLWithPath: selectedExecutable).lastPathComponent
         busy = true
@@ -504,6 +532,19 @@ struct CustomFixView: View {
                 dllSettingsApplied = false
                 try onRemove(id)
                 dismiss()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func repairBridge() {
+        guard let id = validAppID, let directory else { return }
+        busy = true
+        InstallationActivity.busy = true
+        Task {
+            defer { busy = false; InstallationActivity.busy = false }
+            do {
+                let backup = try await Task.detached { try NotProtonBridge.repair(appID: id, directory: directory) }.value
+                message = "Bridge moved to \(backup.lastPathComponent). Launch the game to re-stage it."
             } catch { self.error = error.localizedDescription }
         }
     }
