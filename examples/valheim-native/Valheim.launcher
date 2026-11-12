@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$APP_DIR"
+libs="$APP_DIR/libdoorstop.dylib"
+if [ -n "${DYLD_INSERT_LIBRARIES:-}" ]; then
+    libs="$libs:$DYLD_INSERT_LIBRARIES"
+fi
+export DYLD_INSERT_LIBRARIES="$libs"
+export DYLD_LIBRARY_PATH="$APP_DIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+export DOORSTOP_ENABLED=1
+export DOORSTOP_TARGET_ASSEMBLY="$APP_DIR/BepInEx/core/BepInEx.Preloader.dll"
+export DOORSTOP_MONO_DLL_SEARCH_PATH_OVERRIDE="$APP_DIR/BepInEx/core"
+exec "$APP_DIR/valheim.app/Contents/MacOS/Valheim.real" "$@"

@@ -6,16 +6,18 @@ set -euo pipefail
 GAME="${VALHEIM_DIR:-$HOME/Library/Application Support/Steam/steamapps/common/Valheim}"
 APP="$GAME/valheim.app"
 MACOS="$APP/Contents/MacOS"
-WRAPPER="$MACOS/Valheim"
-REAL="$MACOS/Valheim.bin"
+EXE="$MACOS/Valheim"
+REAL="$MACOS/Valheim.real"
+PLIST="$APP/Contents/Info.plist"
 PLUGIN_DIR="$GAME/BepInEx/plugins"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 STOCK_PLAYFAB="88e39787d1b66b64c0a89514b4a6d635659f9198c41146c5ecab303213f9eae6"
 CORRUPT_PLAYFAB="91d36a6f9af667af60d1ee8d67f0144e7e2ceb619b8a7806bf1c8ef009b2b5fa"
+PB=/usr/libexec/PlistBuddy
 
 fail() { echo "valheim-fix: $*" >&2; exit 1; }
 hash() { shasum -a 256 "$1" | awk '{print $1}'; }
-is_wrapper() { grep -q 'run_bepinex.sh' "$1" 2>/dev/null; }
+is_script() { head -c 2 "$1" 2>/dev/null | grep -q '#!'; }
 
 CHECK=false
 [[ "${1:-}" == "--check" ]] && CHECK=true
@@ -38,40 +40,39 @@ if [[ -f "$PLAYFAB" ]]; then
     fi
 fi
 
-# A Steam update replaces the wrapper with the original binary.
-if [[ -f "$WRAPPER" ]] && ! is_wrapper "$WRAPPER"; then
-    if $CHECK; then fail "Valheim is the stock binary; re-run install"; fi
-    [[ -f "$REAL" ]] || fail "Valheim.bin is missing and Valheim is the stock binary"
-    mv -f "$WRAPPER" "$REAL"
-    echo "refreshed Valheim.bin from the stock binary"
+# A Steam update replaces the wrapper with the stock Mach-O binary.
+if [[ -f "$EXE" ]] && ! is_script "$EXE"; then
+    if $CHECK; then fail "wrapper missing; re-run install"; fi
+    [[ -f "$REAL" ]] && mv -f "$REAL" "$GAME/Valheim.real.previous"
+    mv -f "$EXE" "$REAL"
+    echo "moved the stock binary to Valheim.real"
 fi
 
-if [[ ! -f "$REAL" ]]; then
-    if $CHECK; then fail "Valheim.bin missing"; fi
-    [[ -f "$WRAPPER" ]] || fail "neither Valheim nor Valheim.bin exists"
-    mv "$WRAPPER" "$REAL"
-    echo "original binary moved to Valheim.bin"
-fi
+[[ -f "$EXE" ]] || fail "launcher missing: $EXE"
+[[ -f "$REAL" ]] || fail "game binary missing; run Steam validation to restore it, then re-run install"
+file "$REAL" | grep -q 'Mach-O' || fail "Valheim.real is not a Mach-O executable"
 
 if $CHECK; then
-    [[ -x "$WRAPPER" ]] || fail "wrapper missing"
+    is_script "$EXE" || fail "Valheim is not the launcher script"
+    grep -q 'Valheim.real' "$EXE" || fail "launcher does not start Valheim.real"
     [[ -f "$GAME/BepInEx/core/BepInEx.dll" ]] || fail "BepInEx core missing"
     [[ -f "$PLUGIN_DIR/ValheimOnlineFix.dll" ]] || fail "plugin missing"
+    if codesign -dvv "$REAL" 2>&1 | grep -q 'flags=.*runtime'; then
+        fail "hardened runtime still enabled; re-run install"
+    fi
     echo "valheim-fix: installed"
     exit 0
 fi
 
-cat > "$WRAPPER" <<'WRAPPER_EOF'
-#!/bin/sh
-set -e
-APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
-cd "$APP_DIR"
-exec ./run_bepinex.sh "$APP_DIR/valheim.app/Contents/MacOS/Valheim.bin" "$@"
-WRAPPER_EOF
-chmod +x "$WRAPPER"
-
 [[ -f "$GAME/BepInEx/core/BepInEx.dll" ]] ||
     fail "BepInEx 5.4.23.6 is not installed in $GAME/BepInEx"
+
+cp "$HERE/Valheim.launcher" "$EXE"
+chmod +x "$EXE"
+
+$PB -c "Set :CFBundleExecutable Valheim" "$PLIST" 2>/dev/null ||
+    $PB -c "Add :CFBundleExecutable string Valheim" "$PLIST"
+$PB -c "Delete :LSEnvironment" "$PLIST" 2>/dev/null || true
 
 DOTNET_BIN="${DOTNET:-}"
 if [[ -z "$DOTNET_BIN" ]]; then
@@ -93,8 +94,11 @@ else
     fail "dotnet not found and no plugin is installed"
 fi
 
-codesign --force --sign - "$APP" >/dev/null 2>&1 || fail "codesign failed"
-if ! codesign --verify --strict "$APP" >/dev/null 2>&1; then
-    echo "note: ad-hoc bundle does not pass strict verification (script main executable); Steam launches it directly"
+# Ad-hoc signing removes the hardened runtime so dyld accepts Doorstop, and the
+# launcher merges Doorstop with Steam's own DYLD_INSERT_LIBRARIES.
+codesign --force --sign - "$REAL" >/dev/null 2>&1 || fail "codesign failed for Valheim.real"
+codesign --force --sign - "$APP" >/dev/null 2>&1 || fail "codesign failed for the bundle"
+if codesign -dvv "$REAL" 2>&1 | grep -q 'flags=.*runtime'; then
+    fail "hardened runtime is still enabled"
 fi
 echo "valheim-fix: installed"

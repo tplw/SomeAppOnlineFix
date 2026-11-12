@@ -228,3 +228,30 @@ Steam networking needs the 892970 pipe. Fixing this means spoofing ownership and
 issuing valid tickets on the real AppID, not remapping the AppID. That is a
 separate Steam-client project, so Steam-transport servers remain unsupported;
 PlayFab/crossplay servers work end to end.
+
+### Final macOS loader and stock-DLL plugin (2026-11-12)
+
+Follow-up to the `keepRealAppID` test:
+
+- `arch -e` is unusable on this macOS: it fails with "Can't find any plists"
+  even for `/bin/echo`, so BepInEx's `run_bepinex.sh` path cannot launch games.
+- LaunchServices `LSEnvironment` injects Doorstop on `open valheim.app`, but
+  Steam overrides `DYLD_INSERT_LIBRARIES` with its loader/overlay, so the
+  injection is lost on a real Steam launch.
+- Final loader: a `Valheim` script merges Steam's `DYLD_INSERT_LIBRARIES` with
+  `libdoorstop.dylib`, sets `DOORSTOP_*`, and execs `Valheim.real`. The binary
+  is ad-hoc signed (hardened runtime removed), which lets dyld accept the
+  injection without `arch`.
+- Game assemblies are stock again. The plugin patches
+  `SteamManager.LoadAPPID` (892970), `SteamAPI.RestartAppIfNecessary` (false),
+  `PlayFabAuthWithSteam.Login`/`PlayFabClientAPI.LoginWithSteam`
+  (`LoginWithCustomID`), and `MultiBackendMatchmaking` (crossplay-only list).
+- Live Steam launch on stock assemblies: all five patches applied and PlayFab
+  login succeeded on the first attempt.
+- Crossplay-only browser: 178/178 PlayFab servers, no Project Zomboid/Rust
+  entries; Connect reached `PlayFab socket connected`.
+
+Evidence: `evidence/valheim-native-final-launch.log`,
+`evidence/valheim-native-bepinex-final.log`,
+`evidence/valheim-native-crossplay-browser.png`,
+`evidence/valheim-native-crossplay-join.log`.

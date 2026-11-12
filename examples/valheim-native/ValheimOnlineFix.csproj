@@ -19,6 +19,10 @@
       <HintPath>$(ValheimDir)/valheim.app/Contents/Resources/Data/Managed/PlayFab.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimDir)/valheim.app/Contents/Resources/Data/Managed/assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Steamworks">
       <HintPath>$(ValheimDir)/valheim.app/Contents/Resources/Data/Managed/com.rlabrecque.steamworks.net.dll</HintPath>
       <Private>false</Private>
@@ -29,6 +33,10 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(ValheimDir)/valheim.app/Contents/Resources/Data/Managed/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(ValheimDir)/valheim.app/Contents/Resources/Data/Managed/UnityEngine.ScreenCaptureModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
