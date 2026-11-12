@@ -46,6 +46,15 @@ Experimental OnlineFix implementation for macOS on Apple Silicon.
 - Restores Steam from the backup when present; if `installation.json` and the
   backup are missing, it strips the OnlineFix injection and re-signs Steam.app.
 
+**What this improves**
+- Valheim runs natively and reaches crossplay servers without a Windows layer
+  or edits to the game assemblies.
+- A wrong-platform package (the PEAK GDK fix on a Steam install), a build-hash
+  mismatch, or a half-installed loader is reported before install instead of
+  failing at launch.
+- The right proxy DLLs are recommended, and a stale NotProton bridge can be
+  repaired without reinstalling the game.
+
 ## Known limits
 
 - **PEAK/EOS/Photon:** server-side ticket validation. PEAK remains blocked;
