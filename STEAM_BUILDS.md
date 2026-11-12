@@ -285,3 +285,24 @@ During the investigation Steam.app's LSEnvironment lost `cloud_redirect.dylib`
 re-registered with macsteam, notproton and the OnlineFix runtime dylib, and
 Steam is logged in. Use the Manager's install/repair before the next Steam
 restart so the pinned injection is restored correctly.
+
+### Downloaded PEAK package is the GDK fix, not Steam (2026-11-12)
+
+`~/Downloads/PEAK по сети бесплатно.zip` (Nov 2026) is the Microsoft Store/GDK
+package, not a Steam fix:
+
+- `OnlineFix.ini` has `IsPackaged=false`, `ProductId=9NMKF7LPVX44` (Microsoft
+  Store PEAK), and no `RealAppId`/`FakeAppId`.
+- It ships `wdapp.exe` and `xsapi.dll` (Xbox GDK tools) and a `dlllist.txt`
+  containing only `OnlineFix64.dll`.
+- Its `OnlineFix64.dll` and `winmm.dll` are byte-identical to the versions
+  already installed for the Steam fix.
+
+Applying its INI/dlllist to the Steam install does not change EOS; the game
+still receives a Steam ticket for fake AppID 480 and EOS rejects it (7000).
+The Steam fix (`3527290.zip`) remains the applicable one for this install, and
+it has no EOS patch. A Steam-specific 2026 fix with EOS emulation, the GDK game
+plus GDK fix, or a legitimately owned account is required.
+
+`AGENTS.md` was added at `~/Downloads/AGENTS.md` and
+`~/Desktop/onlinefix-work/AGENTS.md` with the full handoff.
